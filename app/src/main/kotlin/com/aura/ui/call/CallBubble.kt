@@ -104,12 +104,15 @@ private fun BubbleVideo(
             setEnableHardwareScaler(true)
         }
     }
+    // release() must run after removeSink() (see VideoRenderer in CallScreen): declare
+    // the release effect first so it is disposed last, avoiding a frame being delivered
+    // to a released renderer (native abort).
+    DisposableEffect(renderer) {
+        onDispose { renderer.release() }
+    }
     DisposableEffect(track, renderer) {
         track.addSink(renderer)
         onDispose { track.removeSink(renderer) }
-    }
-    DisposableEffect(renderer) {
-        onDispose { renderer.release() }
     }
     AndroidView(factory = { renderer }, modifier = modifier)
 }

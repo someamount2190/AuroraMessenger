@@ -243,14 +243,18 @@ private fun VideoRenderer(
             setMirror(mirror)
         }
     }
-    // Attach/detach the sink with the track, and release the GL renderer when the
-    // composable leaves (call ends / PiP hidden) to avoid leaking the surface.
+    // release() MUST run after removeSink(), or WebRTC can deliver a frame to an
+    // already-released renderer (native use-after-free → abort in libjingle). Compose
+    // disposes effects in reverse declaration order, so declare release FIRST (it is
+    // torn down LAST) and the sink effect SECOND (torn down FIRST). Keying release on
+    // the renderer (not the track) means a track change re-attaches the sink without
+    // releasing the still-live renderer.
+    DisposableEffect(renderer) {
+        onDispose { renderer.release() }
+    }
     DisposableEffect(track, renderer) {
         track.addSink(renderer)
         onDispose { track.removeSink(renderer) }
-    }
-    DisposableEffect(renderer) {
-        onDispose { renderer.release() }
     }
     AndroidView(factory = { renderer }, modifier = modifier)
 }

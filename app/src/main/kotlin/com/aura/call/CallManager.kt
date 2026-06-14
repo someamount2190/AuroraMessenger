@@ -474,11 +474,14 @@ class CallManager @Inject constructor(
         notifier.cancelCall()
         ringer.stop()
         ringTimeoutJob?.cancel()
+        // Dispose the peer connection FIRST so its senders release the tracks before we
+        // dispose the capturer/source — disposing a source still referenced by a live
+        // sender can abort inside libjingle.
+        peerConnection?.dispose()
         try { videoCapturer?.stopCapture() } catch (e: Exception) {}
         videoCapturer?.dispose()
         videoSource?.dispose()
         surfaceHelper?.dispose()
-        peerConnection?.dispose()
         videoCapturer = null
         videoSource = null
         localVideoTrack = null
