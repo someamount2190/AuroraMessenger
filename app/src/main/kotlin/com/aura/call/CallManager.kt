@@ -22,8 +22,6 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.AudioTrack
 import org.webrtc.Camera2Enumerator
-import org.webrtc.DefaultVideoDecoderFactory
-import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.EglBase
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
@@ -33,6 +31,8 @@ import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpReceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
+import org.webrtc.SoftwareVideoDecoderFactory
+import org.webrtc.SoftwareVideoEncoderFactory
 import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoCapturer
 import org.webrtc.VideoSource
@@ -139,9 +139,19 @@ class CallManager @Inject constructor(
             PeerConnectionFactory.InitializationOptions.builder(context)
                 .createInitializationOptions()
         )
+        // Software-only VP8/VP9 codecs (libvpx, bundled in the webrtc-sdk).
+        //
+        // We deliberately do NOT use DefaultVideo*Factory here. That factory
+        // advertises the device's hardware H.264/VP8 codecs and lets WebRTC pick
+        // them; it only falls back to software when hardware is *absent*, not when
+        // hardware is present-but-buggy. On some Xiaomi/POCO devices the hardware
+        // encoder aborts mid-call (native RTC_CHECK in libjingle on a worker
+        // thread), taking the whole app down. Forcing software codecs removes that
+        // path entirely. Both ends run Aurora, so both negotiate software VP8 with
+        // no loss of interop; the CPU cost is negligible for a 1:1 call.
         factory = PeerConnectionFactory.builder()
-            .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
-            .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
+            .setVideoEncoderFactory(SoftwareVideoEncoderFactory())
+            .setVideoDecoderFactory(SoftwareVideoDecoderFactory())
             .createPeerConnectionFactory()
     }
 
