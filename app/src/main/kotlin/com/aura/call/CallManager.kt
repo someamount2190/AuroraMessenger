@@ -89,6 +89,12 @@ class CallManager @Inject constructor(
     private var remoteNodeIdHex: String? = null
     private var pendingOfferSdp: String? = null   // held while INCOMING, applied on accept
     private var pendingOfferIsVideo: Boolean = true
+    // True once the remote SDP (offer on the callee, answer on the caller) is applied —
+    // ICE candidates may only be added after that. Remote candidates that arrive earlier
+    // (very common: the caller trickles candidates before the callee has even accepted)
+    // are buffered here and replayed by flushPendingIce().
+    @Volatile private var remoteDescSet: Boolean = false
+    private val pendingRemoteIce = java.util.Collections.synchronizedList(ArrayList<IceCandidate>())
 
     // Whether the local camera is currently sending. Drives the in-call video
     // toggle button and hides the self-view when the camera is off.
@@ -98,6 +104,7 @@ class CallManager @Inject constructor(
     // Call-log bookkeeping (each device logs its own view of the call into the chat).
     private var callConnectedAtMs: Long = 0L      // >0 once media connected (answered)
     private var callDeclinedByMe: Boolean = false
+    private var callAcceptedByMe: Boolean = false // we tapped Accept on an incoming call
 
     // Video tracks are exposed as state (not one-shot callbacks) so the call UI
     // renders them whenever it composes, regardless of whether the track was
@@ -134,7 +141,8 @@ class CallManager @Inject constructor(
     fun startCall(peerNodeIdHex: String, video: Boolean = true) {
         val s = scope ?: return
         remoteNodeIdHex = peerNodeIdHex
-        callConnectedAtMs = 0L; callDeclinedByMe = false
+        callConnectedAtMs = 0L; callDeclinedByMe = false; callAcceptedByMe = false
+        remoteDescSet = false; pendingRemoteIce.clear()
         _videoEnabled.value = video
         s.launch {
             val contact = contactDao.byNodeId(peerNodeIdHex)
@@ -159,6 +167,7 @@ class CallManager @Inject constructor(
         notifier.cancelCall()
         ringer.stop()
         ringTimeoutJob?.cancel()
+        callAcceptedByMe = true
         _videoEnabled.value = pendingOfferIsVideo
         s.launch {
             _call.value = _call.value.copy(state = CallState.CONNECTING)
@@ -168,6 +177,10 @@ class CallManager @Inject constructor(
                 SimpleSdpObserver(),
                 SessionDescription(SessionDescription.Type.OFFER, offerSdp)
             )
+            // Remote offer applied: replay ICE candidates the caller trickled before we
+            // accepted (buffered because no peer connection existed then).
+            remoteDescSet = true
+            flushPendingIce()
             val answer = createAnswer()
             peerConnection?.setLocalDescription(SimpleSdpObserver(), answer)
             sendSignal(peer, JSONObject().put("kind", "answer").put("sdp", answer.description))
@@ -208,6 +221,7 @@ class CallManager @Inject constructor(
             connected            -> "answered"
             info.isCaller        -> "no_answer"
             callDeclinedByMe     -> "declined"
+            callAcceptedByMe     -> "ended"     // we answered, but media never connected
             else                 -> "missed"
         }
         val entity = MessageEntity(
@@ -231,6 +245,7 @@ class CallManager @Inject constructor(
         "missed"    -> "Missed call"
         "declined"  -> "Declined call"
         "no_answer" -> "No answer"
+        "ended"     -> "Call ended"
         else        -> "Call"
     }
 
@@ -279,7 +294,8 @@ class CallManager @Inject constructor(
                 remoteNodeIdHex = from
                 pendingOfferSdp = inner.optString("sdp")
                 pendingOfferIsVideo = inner.optBoolean("video", true)
-                callConnectedAtMs = 0L; callDeclinedByMe = false
+                callConnectedAtMs = 0L; callDeclinedByMe = false; callAcceptedByMe = false
+                remoteDescSet = false; pendingRemoteIce.clear()
                 _call.value = CallInfo(CallState.INCOMING, from, contact.displayName, isCaller = false, isVideo = pendingOfferIsVideo)
                 // Surface the call over whatever is in the foreground (other app,
                 // launcher, lock screen). No-op when Aurora is already on screen —
@@ -299,10 +315,13 @@ class CallManager @Inject constructor(
                     SimpleSdpObserver(),
                     SessionDescription(SessionDescription.Type.ANSWER, inner.optString("sdp"))
                 )
+                // Remote answer applied: replay any ICE candidates buffered before it.
+                remoteDescSet = true
+                flushPendingIce()
                 _call.value = _call.value.copy(state = CallState.CONNECTING)
             }
             "ice" -> {
-                peerConnection?.addIceCandidate(
+                addOrBufferIce(
                     IceCandidate(inner.optString("mid"), inner.optInt("mlineindex"), inner.optString("candidate"))
                 )
             }
@@ -323,6 +342,27 @@ class CallManager @Inject constructor(
             .put("n", sealed.n)
             .put("sealed", Base64.encodeToString(sealed.bytes, Base64.NO_WRAP))
         rendezvousClient.postSignal(settings.serverAddress.value, peerNodeIdHex, payload.toString())
+    }
+
+    /**
+     * Add a remote ICE candidate now if the peer connection exists and its remote
+     * description is set; otherwise buffer it. Candidates routinely arrive before the
+     * callee accepts (no peer connection yet) or before the remote SDP is applied.
+     * Dropping them — as the old code did — left ICE with no candidate pairs and the
+     * call stuck on "connecting"; [flushPendingIce] replays the buffered ones.
+     */
+    private fun addOrBufferIce(candidate: IceCandidate) {
+        val pc = peerConnection
+        if (pc != null && remoteDescSet) pc.addIceCandidate(candidate)
+        else pendingRemoteIce.add(candidate)
+    }
+
+    private fun flushPendingIce() {
+        val pc = peerConnection ?: return
+        synchronized(pendingRemoteIce) {
+            pendingRemoteIce.forEach { pc.addIceCandidate(it) }
+            pendingRemoteIce.clear()
+        }
     }
 
     // ── WebRTC plumbing ────────────────────────────────────────────────────
@@ -438,6 +478,9 @@ class CallManager @Inject constructor(
         _localVideo.value = null
         _remoteVideo.value = null
         _videoEnabled.value = true
+        remoteDescSet = false
+        callAcceptedByMe = false
+        pendingRemoteIce.clear()
     }
 
     private companion object {
