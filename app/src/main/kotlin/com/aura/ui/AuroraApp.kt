@@ -20,6 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -46,6 +48,7 @@ import com.aura.settings.AuroraSettings
 import com.aura.share.ShareIntentBus
 import com.aura.share.ShareShortcutManager
 import com.aura.ui.share.ShareScreen
+import com.aura.ui.call.CallBubble
 import com.aura.ui.call.CallScreen
 import com.aura.ui.lock.LockScreen
 import com.aura.ui.conversation.ConversationScreen
@@ -120,6 +123,7 @@ fun AuroraApp(viewModel: AuroraAppViewModel = hiltViewModel()) {
 private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
     val locked by viewModel.appLockManager.locked.collectAsState()
     val callState by viewModel.callManager.call.collectAsState()
+    val minimized by viewModel.callManager.minimized.collectAsState()
     // Calls bypass the app lock: while locked, an incoming or ongoing call shows ONLY
     // the call screen (never the rest of the app), then falls back to the lock screen
     // the instant the call ends — so answering doesn't require entering the PIN first.
@@ -183,20 +187,20 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
         }
     }
 
-    // Auto-present the call screen on an incoming call (or while a call is live).
-    LaunchedEffect(callState.state) {
+    // Auto-present the call screen on an incoming call (or while a call is live),
+    // unless the user minimized it — then the floating bubble represents the call.
+    LaunchedEffect(callState.state, minimized) {
         val s = callState.state
-        if (s == com.aura.call.CallManager.CallState.INCOMING ||
+        val active = s == com.aura.call.CallManager.CallState.INCOMING ||
             s == com.aura.call.CallManager.CallState.OUTGOING ||
             s == com.aura.call.CallManager.CallState.CONNECTING ||
             s == com.aura.call.CallManager.CallState.CONNECTED
-        ) {
-            if (navController.currentDestination?.route != Routes.CALL) {
-                navController.navigate(Routes.CALL)
-            }
+        if (active && !minimized && navController.currentDestination?.route != Routes.CALL) {
+            navController.navigate(Routes.CALL) { launchSingleTop = true }
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     NavHost(navController = navController, startDestination = Routes.SPLASH) {
         composable(Routes.SPLASH) {
             SplashScreen(
@@ -284,6 +288,16 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
             )
         }
         composable(Routes.CALL) {
+            // Back does not end the call: minimize it and drop to the main menu. The
+            // call keeps running (CallManager is process-scoped) and the floating bubble
+            // + ongoing notification take over.
+            BackHandler {
+                viewModel.callManager.minimize()
+                navController.navigate(Routes.HOME) {
+                    popUpTo(Routes.HOME) { inclusive = false }
+                    launchSingleTop = true
+                }
+            }
             CallScreen(
                 onCallEnded = {
                     if (navController.currentDestination?.route == Routes.CALL) {
@@ -306,6 +320,21 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
                 }
             )
         }
+    }
+
+    // Floating call bubble: shown over the whole app while a call runs minimized.
+    // Tapping it restores the full call screen.
+    if (callActive && minimized) {
+        CallBubble(
+            callManager = viewModel.callManager,
+            onExpand = {
+                viewModel.callManager.expand()
+                if (navController.currentDestination?.route != Routes.CALL) {
+                    navController.navigate(Routes.CALL) { launchSingleTop = true }
+                }
+            }
+        )
+    }
     }
 
 }

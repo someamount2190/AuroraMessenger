@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
         observeCallWindowFlags()
         handleShareIntent(intent)
         handleCallAnswer(intent)
+        handleCallOpen(intent)
         setContent {
             val themeMode by auroraSettings.themeMode.collectAsState()
             val palette by auroraSettings.themePalette.collectAsState()
@@ -65,12 +66,20 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         handleShareIntent(intent)
         handleCallAnswer(intent)
+        handleCallOpen(intent)
     }
 
     /** The notification's Answer button launches us with this action — accept the call. */
     private fun handleCallAnswer(intent: Intent?) {
         if (intent?.action == com.aura.notify.Notifier.ACTION_ANSWER_CALL) {
             callManager.acceptCall()
+        }
+    }
+
+    /** Tapping the ongoing-call notification restores the minimized call to full screen. */
+    private fun handleCallOpen(intent: Intent?) {
+        if (intent?.action == com.aura.notify.Notifier.ACTION_OPEN_CALL) {
+            callManager.expand()
         }
     }
 

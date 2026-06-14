@@ -151,6 +151,59 @@ class Notifier @Inject constructor(
         NotificationManagerCompat.from(context).cancel(ID_CALL)
     }
 
+    /**
+     * Ongoing "call in progress" notification shown for the duration of a connected
+     * call. Tapping it returns to the call; the End action hangs up via a broadcast
+     * without opening the app. Unlike the other alerts this is NOT suppressed while the
+     * app is foreground — it's a persistent control the user expects in the shade while
+     * the call runs minimized. Reuses ID_CALL so it replaces the incoming-ring alert.
+     */
+    fun notifyOngoingCall() {
+        if (!canPost()) return
+        val end = endIntent()
+        val builder = NotificationCompat.Builder(context, CH_CALLS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setContentIntent(openCallIntent())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val caller = androidx.core.app.Person.Builder().setName("Aurora call").build()
+            builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(caller, end))
+        } else {
+            builder.setContentTitle("Aurora call in progress")
+                .setContentText("Tap to return to the call")
+                .addAction(R.drawable.ic_notification, "End", end)
+        }
+        NotificationManagerCompat.from(context).notify(ID_CALL, builder.build())
+    }
+
+    /** Activity intent that opens the app and restores (expands) the minimized call. */
+    private fun openCallIntent(): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            action = ACTION_OPEN_CALL
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        return PendingIntent.getActivity(
+            context, 4, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    /** Broadcast intent that ends an in-progress call without opening the app. */
+    private fun endIntent(): PendingIntent {
+        val intent = Intent(context, com.aura.call.CallActionReceiver::class.java).apply {
+            action = com.aura.call.CallActionReceiver.ACTION_END
+        }
+        return PendingIntent.getBroadcast(
+            context, 3, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     /** A new pairing request arrived — generic alert prompting the user to open the app. */
     fun notifyContactRequest() {
         if (foreground.isForeground) return
@@ -174,6 +227,8 @@ class Notifier @Inject constructor(
     companion object {
         /** Intent action carried by the notification's Answer button (handled in MainActivity). */
         const val ACTION_ANSWER_CALL = "com.aura.action.ANSWER_CALL"
+        /** Tapping the ongoing-call notification restores (expands) the minimized call. */
+        const val ACTION_OPEN_CALL = "com.aura.action.OPEN_CALL"
         private const val CH_MESSAGES = "messages"
         // "calls_v2": the original "calls" channel shipped with a default sound that
         // can't be changed after creation; this one is silent (Ringer owns the audio).

@@ -101,6 +101,15 @@ class CallManager @Inject constructor(
     private val _videoEnabled = MutableStateFlow(true)
     val videoEnabled: StateFlow<Boolean> = _videoEnabled
 
+    // Minimized = the call is still running but the full call screen is dismissed (the
+    // user pressed Back to the main menu). The app shows a floating bubble instead, and
+    // an ongoing notification carries an End control. Reset to false whenever a call
+    // starts/arrives or ends, so a new call always opens full-screen.
+    private val _minimized = MutableStateFlow(false)
+    val minimized: StateFlow<Boolean> = _minimized
+    fun minimize() { _minimized.value = true }
+    fun expand() { _minimized.value = false }
+
     // Call-log bookkeeping (each device logs its own view of the call into the chat).
     private var callConnectedAtMs: Long = 0L      // >0 once media connected (answered)
     private var callDeclinedByMe: Boolean = false
@@ -143,6 +152,7 @@ class CallManager @Inject constructor(
         remoteNodeIdHex = peerNodeIdHex
         callConnectedAtMs = 0L; callDeclinedByMe = false; callAcceptedByMe = false
         remoteDescSet = false; pendingRemoteIce.clear()
+        _minimized.value = false
         _videoEnabled.value = video
         s.launch {
             val contact = contactDao.byNodeId(peerNodeIdHex)
@@ -296,6 +306,7 @@ class CallManager @Inject constructor(
                 pendingOfferIsVideo = inner.optBoolean("video", true)
                 callConnectedAtMs = 0L; callDeclinedByMe = false; callAcceptedByMe = false
                 remoteDescSet = false; pendingRemoteIce.clear()
+                _minimized.value = false
                 _call.value = CallInfo(CallState.INCOMING, from, contact.displayName, isCaller = false, isVideo = pendingOfferIsVideo)
                 // Surface the call over whatever is in the foreground (other app,
                 // launcher, lock screen). No-op when Aurora is already on screen —
@@ -388,7 +399,9 @@ class CallManager @Inject constructor(
                 if (state == PeerConnection.IceConnectionState.CONNECTED ||
                     state == PeerConnection.IceConnectionState.COMPLETED) {
                     if (callConnectedAtMs == 0L) callConnectedAtMs = System.currentTimeMillis()
-                    notifier.cancelCall()
+                    // Replace the incoming-ring notification with the ongoing-call
+                    // notification (same id): "call in progress" + an End control.
+                    notifier.notifyOngoingCall()
                     _call.value = _call.value.copy(state = CallState.CONNECTED)
                 } else if (state == PeerConnection.IceConnectionState.DISCONNECTED ||
                     state == PeerConnection.IceConnectionState.FAILED) {
@@ -481,6 +494,7 @@ class CallManager @Inject constructor(
         remoteDescSet = false
         callAcceptedByMe = false
         pendingRemoteIce.clear()
+        _minimized.value = false
     }
 
     private companion object {
