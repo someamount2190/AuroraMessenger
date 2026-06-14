@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark splash/window background — deep plum near-black with warmth. -->
+    <style name="Theme.Aurora" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#1A0F17</item>
+        <item name="android:windowBackground">#1A0F17</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

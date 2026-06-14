@@ -1,0 +1,43 @@
+# ── Secrets — NEVER commit (release signing key + local config) ──────────────
+keystore.properties
+keystore/
+*.jks
+*.keystore
+local.properties
+google-services.json
+secrets.properties
+
+# ── Gradle / Android build outputs ───────────────────────────────────────────
+.gradle/
+build/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+lint/
+
+# Keep Room schema exports (app/schemas) — they're the migration baseline and
+# MUST be committed; build/ is ignored above but schemas live outside it.
+
+# ── IDE / tooling ────────────────────────────────────────────────────────────
+.idea/
+*.iml
+.kotlin/
+.DS_Store
+Thumbs.db
+
+# ── Node (rendezvous-server) ─────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+*.log
+
+# ── Ad-hoc test/debug artifacts (uiautomator dumps, screenshots, scratch) ────
+# These accumulated at the repo root during emulator testing; they are not
+# source. Prefer deleting them outright before the first push.
+/*.png
+/*.xml

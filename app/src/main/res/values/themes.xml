@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light splash/window background (Compose draws the real UI over this). -->
+    <style name="Theme.Aurora" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#FAF5F8</item>
+        <item name="android:windowBackground">#FAF5F8</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

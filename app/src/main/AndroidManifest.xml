@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- QR scanning (Phase 2) + video calls (Phase 7) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Message + incoming-call alerts (Android 13+ runtime-prompts for POST). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Full-screen incoming-call notification that surfaces over the foreground. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Vibrate while an incoming call rings. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Background wake service: a low-priority foreground service holds the parked
+         long-poll so a peer's tap can rouse the app to receive messages/calls. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Ask the user to exempt Aurora from Doze so the parked socket survives sleep. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <application
+        android:name=".AuroraApplication"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false"
+        android:theme="@style/Theme.Aurora"
+        android:usesCleartextTraffic="true">
+        <!-- usesCleartextTraffic: the production rendezvous server now runs over
+             TLS with certificate pinning (https://api.auroramessenger.com, see
+             RendezvousClient). This flag stays on only for local-network paths —
+             the developer-mode server override (http://10.0.2.2:8080) and LAN
+             rendezvous probes. All message/media content is end-to-end encrypted
+             at the application layer regardless of transport. -->
+
+        <!-- FileProvider for sharing decrypted media from the fullscreen viewer. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Appear in the system share sheet (like Signal / Messenger / Viber):
+                 text, images and video shared from any app can be sent to a contact. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+
+            <!-- Direct-share contact shortcuts (the row of faces in the share sheet). -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- Decline action on the incoming-call notification (lock screen included). -->
+        <receiver
+            android:name=".call.CallActionReceiver"
+            android:exported="false" />
+
+        <!-- Background wake service. specialUse: it holds an end-to-end-encrypted
+             connection to receive messages and calls — there is no first-class
+             foreground-service type for a privacy messenger's keep-alive socket. -->
+        <service
+            android:name=".service.WakeService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Maintains an end-to-end encrypted connection to receive messages and calls while the app is in the background." />
+        </service>
+    </application>
+</manifest>

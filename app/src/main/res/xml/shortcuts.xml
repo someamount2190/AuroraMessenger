@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Declares Aurora's MainActivity as a direct-share target so paired contacts
+         can appear as shortcuts in the system share sheet (like Signal/Messenger). -->
+    <share-target android:targetClass="com.aura.MainActivity">
+        <data android:mimeType="text/plain" />
+        <data android:mimeType="image/*" />
+        <data android:mimeType="video/*" />
+        <category android:name="com.aura.directshare.category.CONTACT" />
+    </share-target>
+</shortcuts>

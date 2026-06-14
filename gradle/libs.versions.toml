@@ -1,0 +1,77 @@
+[versions]
+agp             = "8.3.2"
+kotlin          = "1.9.23"
+ksp             = "1.9.23-1.0.19"
+hilt            = "2.51.1"
+coroutines      = "1.8.0"
+sqlcipher       = "4.5.6"
+room            = "2.6.1"
+sqlite          = "2.4.0"
+liboqs          = "0.3.0"
+bcprov          = "1.78.1"
+securityCrypto  = "1.1.0-alpha06"
+coreKtx         = "1.13.0"
+sharetarget     = "1.2.0"
+composeBom      = "2024.05.00"
+composeActivity = "1.9.0"
+composeNav      = "2.7.7"
+composeLifecycle= "2.7.0"
+composeHilt     = "1.2.0"
+zxing           = "3.5.3"
+zxing-android   = "4.3.0"
+nanohttpd       = "2.3.1"
+okhttp          = "4.12.0"
+webrtc          = "125.6422.07"
+junit           = "4.13.2"
+
+[libraries]
+kotlin-stdlib            = { module = "org.jetbrains.kotlin:kotlin-stdlib",               version.ref = "kotlin"     }
+coroutines-core          = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core",    version.ref = "coroutines" }
+coroutines-android       = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+
+hilt-android             = { module = "com.google.dagger:hilt-android",  version.ref = "hilt" }
+hilt-compiler            = { module = "com.google.dagger:hilt-compiler", version.ref = "hilt" }
+
+sqlcipher                = { module = "net.zetetic:sqlcipher-android",   version.ref = "sqlcipher" }
+sqlite-ktx               = { module = "androidx.sqlite:sqlite-ktx",      version.ref = "sqlite"    }
+room-runtime             = { module = "androidx.room:room-runtime",     version.ref = "room" }
+room-ktx                 = { module = "androidx.room:room-ktx",         version.ref = "room" }
+room-compiler            = { module = "androidx.room:room-compiler",    version.ref = "room" }
+
+liboqs                   = { module = "org.openquantumsafe:liboqs-java", version.ref = "liboqs" }
+bcprov                   = { module = "org.bouncycastle:bcprov-jdk15to18", version.ref = "bcprov" }
+security-crypto          = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
+
+core-ktx                 = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+sharetarget              = { module = "androidx.sharetarget:sharetarget", version.ref = "sharetarget" }
+
+compose-bom              = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+compose-ui               = { module = "androidx.compose.ui:ui" }
+compose-ui-unit          = { module = "androidx.compose.ui:ui-unit-android" }
+compose-ui-tooling       = { module = "androidx.compose.ui:ui-tooling" }
+compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+compose-foundation       = { module = "androidx.compose.foundation:foundation" }
+compose-animation        = { module = "androidx.compose.animation:animation" }
+compose-animation-core    = { module = "androidx.compose.animation:animation-core" }
+compose-material3        = { module = "androidx.compose.material3:material3" }
+compose-material-icons   = { module = "androidx.compose.material:material-icons-extended-android" }
+compose-activity         = { module = "androidx.activity:activity-compose", version.ref = "composeActivity" }
+compose-navigation       = { module = "androidx.navigation:navigation-compose", version.ref = "composeNav" }
+compose-lifecycle        = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "composeLifecycle" }
+compose-viewmodel        = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "composeLifecycle" }
+compose-hilt-nav         = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "composeHilt" }
+
+zxing-core               = { module = "com.google.zxing:core", version.ref = "zxing" }
+zxing-android-embedded   = { module = "com.journeyapps:zxing-android-embedded", version.ref = "zxing-android" }
+
+nanohttpd                = { module = "org.nanohttpd:nanohttpd", version.ref = "nanohttpd" }
+okhttp                   = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+webrtc                   = { module = "io.github.webrtc-sdk:android", version.ref = "webrtc" }
+
+junit                    = { module = "junit:junit", version.ref = "junit" }
+
+[plugins]
+android-application      = { id = "com.android.application",        version.ref = "agp"    }
+kotlin-android           = { id = "org.jetbrains.kotlin.android",   version.ref = "kotlin" }
+hilt                     = { id = "com.google.dagger.hilt.android", version.ref = "hilt"   }
+ksp                      = { id = "com.google.devtools.ksp",        version.ref = "ksp"    }
