@@ -4,13 +4,6 @@ All notable changes to **Aurora Messenger** are documented here. The format is b
 [Keep a Changelog](https://keepachangelog.com/), and the project uses a single pre-alpha
 line (`0.1.0-pre`) while the design stabilises.
 
-> **Note on history.** The foundational work — the original build phases plus the first
-> crypto-hardening pass (2026-06-12 → 06-13) — predates this repository on GitHub: it
-> landed as one squashed commit (`f96be8e`) when the project was first published on
-> 2026-06-14. Entries under `0.1.0-pre` are therefore reconstructed from the development
-> notes kept alongside the build and summarise capabilities rather than individual
-> commits. Everything under *Unreleased* is backed by per-change commits.
-
 ## [Unreleased]
 
 Work after the first pre-alpha tag. The signed APK attached to the `v0.1.0-pre` GitHub
