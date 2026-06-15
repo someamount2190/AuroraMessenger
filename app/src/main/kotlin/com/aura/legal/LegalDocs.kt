@@ -19,7 +19,7 @@ data class LegalDoc(
 
 object LegalDocs {
     const val CONTACT_EMAIL = "christiancorrea26@gmail.com"
-    const val DEVELOPER = "Christian Lim Correa"
+    const val DEVELOPER = "Christian Lim Correa, a Filipino developer"
     const val EFFECTIVE_DATE = "June 14, 2026"
 
     val TERMS = LegalDoc(
@@ -31,7 +31,7 @@ object LegalDocs {
 By downloading, installing, or using Aurora Messenger, you agree to be bound by these Terms and Conditions in their entirety. If you do not agree with any part of these Terms, you must not use Aurora Messenger. These Terms apply to all users of the Aurora Messenger application worldwide.
 
 # 2. About Aurora Messenger
-Aurora Messenger is a private messaging application developed by Christian Lim Correa. Aurora Messenger enables direct encrypted communication between devices without routing messages through central servers. Aurora Messenger is completely free to use. There are no subscription fees, no in-app purchases, and no advertising of any kind. Aurora Messenger is provided solely as a tool for private, lawful personal communication.
+Aurora Messenger is a private messaging application developed by Christian Lim Correa, a Filipino developer. Aurora Messenger enables direct encrypted communication between devices without routing messages through central servers. Aurora Messenger is completely free to use. There are no subscription fees, no in-app purchases, and no advertising of any kind. Aurora Messenger is provided solely as a tool for private, lawful personal communication.
 
 # 3. Eligibility and Age Requirements
 ## 3.1 Minimum Age
@@ -80,12 +80,12 @@ Aurora Messenger offers an optional opt-in feature called ShadowMesh, which allo
 Aurora Messenger is provided on an as-is and as-available basis without warranty of any kind, whether express or implied. We do not warrant that Aurora Messenger will be uninterrupted, error-free, or entirely secure at all times. While we have taken extensive technical measures to protect user privacy, no system can guarantee complete immunity from all possible threats.
 
 # 11. Limitation of Liability
-To the maximum extent permitted by applicable law, Christian Lim Correa shall not be liable for any indirect, incidental, special, exemplary, or consequential damages arising from or related to your use of Aurora Messenger or your inability to use Aurora Messenger.
+To the maximum extent permitted by applicable law, Christian Lim Correa, a Filipino developer, shall not be liable for any indirect, incidental, special, exemplary, or consequential damages arising from or related to your use of Aurora Messenger or your inability to use Aurora Messenger.
 
 # 12. Open Source & Intellectual Property
 Aurora Messenger's source code is free and open source, licensed under the GNU Affero General Public License, version 3 (AGPL-3.0). You are free to use, study, modify, and redistribute it under the terms of that license (including running your own copy of the rendezvous server), provided you comply with it. Among other things, the AGPL requires that if you run a modified version as a network service, you make your modified source available to its users. Nothing in these Terms limits the rights the AGPL grants you.
 
-The name "Aurora", the Aurora branding, logo, and visual identity are not covered by that license and remain the property of Christian Lim Correa. Please do not use them in a way that implies official endorsement, or that presents a modified version as the official Aurora.
+The name "Aurora", the Aurora branding, logo, and visual identity are not covered by that license and remain the property of Christian Lim Correa, a Filipino developer. Please do not use them in a way that implies official endorsement, or that presents a modified version as the official Aurora.
 
 # 13. Termination
 We reserve the right to restrict or terminate access to Aurora Messenger for any user who violates these Terms, with particular regard to the prohibited use provisions outlined in Section 5. Because Aurora Messenger operates without central user accounts, termination may take the form of blocking a Node ID from accessing the rendezvous server.

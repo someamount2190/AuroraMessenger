@@ -69,7 +69,9 @@ class CallManager @Inject constructor(
         val peerNodeIdHex: String? = null,
         val peerName: String? = null,
         val isCaller: Boolean = false,
-        val isVideo: Boolean = true
+        val isVideo: Boolean = true,
+        /** Wall-clock millis the media connected (0 until CONNECTED). Drives call timers. */
+        val connectedAtMs: Long = 0L
     )
 
     val eglBase: EglBase by lazy { EglBase.create() }
@@ -166,6 +168,10 @@ class CallManager @Inject constructor(
 
     fun startCall(peerNodeIdHex: String, video: Boolean = true) {
         val s = scope ?: return
+        // One call at a time: ignore a request to start a new call (this contact or any
+        // other) while one is already incoming/outgoing/connecting/connected.
+        val cur = _call.value.state
+        if (cur != CallState.IDLE && cur != CallState.ENDED) return
         remoteNodeIdHex = peerNodeIdHex
         callConnectedAtMs = 0L; callDeclinedByMe = false; callAcceptedByMe = false
         remoteDescSet = false; pendingRemoteIce.clear()
@@ -429,7 +435,7 @@ class CallManager @Inject constructor(
                             // Replace the incoming-ring notification with the ongoing-call
                             // notification (same id): "call in progress" + an End control.
                             notifier.notifyOngoingCall()
-                            _call.value = _call.value.copy(state = CallState.CONNECTED)
+                            _call.value = _call.value.copy(state = CallState.CONNECTED, connectedAtMs = callConnectedAtMs)
                         }
                         PeerConnection.IceConnectionState.DISCONNECTED,
                         PeerConnection.IceConnectionState.FAILED -> endCall(notifyPeer = false)

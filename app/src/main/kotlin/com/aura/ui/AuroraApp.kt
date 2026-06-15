@@ -50,6 +50,7 @@ import com.aura.share.ShareShortcutManager
 import com.aura.ui.share.ShareScreen
 import com.aura.ui.call.CallBubble
 import com.aura.ui.call.CallScreen
+import com.aura.ui.call.OngoingCallBar
 import com.aura.ui.lock.LockScreen
 import com.aura.ui.conversation.ConversationScreen
 import com.aura.ui.home.HomeScreen
@@ -323,18 +324,18 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
         }
     }
 
-    // Floating call bubble: shown over the whole app while a call runs minimized.
-    // Tapping it restores the full call screen.
+    // While a call runs minimized, show both: a docked ongoing-call bar at the top
+    // (Messenger/Viber style, works for voice and video) and the floating video bubble.
+    // Tapping either restores the full call screen.
     if (callActive && minimized) {
-        CallBubble(
-            callManager = viewModel.callManager,
-            onExpand = {
-                viewModel.callManager.expand()
-                if (navController.currentDestination?.route != Routes.CALL) {
-                    navController.navigate(Routes.CALL) { launchSingleTop = true }
-                }
+        val restoreCall = {
+            viewModel.callManager.expand()
+            if (navController.currentDestination?.route != Routes.CALL) {
+                navController.navigate(Routes.CALL) { launchSingleTop = true }
             }
-        )
+        }
+        OngoingCallBar(callManager = viewModel.callManager, onExpand = restoreCall)
+        CallBubble(callManager = viewModel.callManager, onExpand = restoreCall)
     }
     }
 

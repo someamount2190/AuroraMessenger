@@ -107,6 +107,11 @@ class AuroraSettings @Inject constructor(
         get() = prefs.getBoolean(KEY_BATTERY_PROMPT, false)
         set(value) { prefs.edit().putBoolean(KEY_BATTERY_PROMPT, value).apply() }
 
+    /** Whether we've asked once for the "display over other apps" permission (call bubble). */
+    var overlayPromptShown: Boolean
+        get() = prefs.getBoolean(KEY_OVERLAY_PROMPT, false)
+        set(value) { prefs.edit().putBoolean(KEY_OVERLAY_PROMPT, value).apply() }
+
     /**
      * Whether the brand splash has already been shown on this install. The logo
      * dwell plays only on the very first launch of a freshly initialized app;
@@ -191,6 +196,7 @@ class AuroraSettings @Inject constructor(
         private const val KEY_ONBOARDING_DONE = "onboarding_done"
         private const val KEY_SPLASH_SHOWN     = "splash_shown"
         private const val KEY_BATTERY_PROMPT   = "battery_prompt_shown"
+        private const val KEY_OVERLAY_PROMPT   = "overlay_prompt_shown"
         private const val KEY_DURESS_WIPE      = "duress_wipe"
         private const val KEY_DISAPPEARING    = "disappearing_timer"
         private const val KEY_THEME           = "theme_mode"

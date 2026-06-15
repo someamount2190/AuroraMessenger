@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var shareIntentBus: ShareIntentBus
     @Inject lateinit var auroraSettings: AuroraSettings
     @Inject lateinit var callManager: com.aura.call.CallManager
+    @Inject lateinit var overlayManager: com.aura.call.CallOverlayManager
 
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* best-effort */ }
@@ -44,6 +45,7 @@ class MainActivity : ComponentActivity() {
         maybeRequestNotificationPermission()
         maybeStartWakeService()
         observeCallWindowFlags()
+        observeMinimizeForOverlayPermission()
         handleShareIntent(intent)
         handleCallAnswer(intent)
         handleCallOpen(intent)
@@ -149,10 +151,49 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Back in the foreground: the in-app bar/bubble represents the call now, so drop
+        // the over-other-apps floating window.
+        overlayManager.hide()
+    }
+
     override fun onStop() {
         super.onStop()
         // Re-lock when the app leaves the foreground (app-lock enabled only).
         appLockManager.lock()
+        // If a call is live, float it over other apps (Messenger/Viber-style bubble) so
+        // leaving Aurora doesn't drop the call from view. No-op without the overlay grant.
+        val s = callManager.call.value.state
+        val callActive = s == com.aura.call.CallManager.CallState.OUTGOING ||
+            s == com.aura.call.CallManager.CallState.INCOMING ||
+            s == com.aura.call.CallManager.CallState.CONNECTING ||
+            s == com.aura.call.CallManager.CallState.CONNECTED
+        if (callActive) overlayManager.show()
+    }
+
+    /**
+     * The first time the user minimizes a call, ask once for the "display over other
+     * apps" permission so the call can float over other apps. Declining is fine — the
+     * call still runs with the in-app bar and the ongoing-call notification; it just
+     * won't float over other apps.
+     */
+    private fun observeMinimizeForOverlayPermission() {
+        lifecycleScope.launch {
+            callManager.minimized.collect { minimized ->
+                if (minimized && !auroraSettings.overlayPromptShown &&
+                    !android.provider.Settings.canDrawOverlays(this@MainActivity)
+                ) {
+                    auroraSettings.overlayPromptShown = true
+                    runCatching {
+                        startActivity(
+                            Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                                .setData(Uri.parse("package:$packageName"))
+                        )
+                    }
+                }
+            }
+        }
     }
 
     /** Parse an inbound system-share (ACTION_SEND/SEND_MULTIPLE) into a pending share. */

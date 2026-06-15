@@ -124,10 +124,18 @@ class ConversationViewModel @Inject constructor(
     private val disappearingManager: DisappearingManager,
     private val reactionManager: ReactionManager,
     private val voiceRecorder: VoiceRecorder,
-    private val pairingManager: com.aura.pairing.PairingManager
+    private val pairingManager: com.aura.pairing.PairingManager,
+    private val callManager: com.aura.call.CallManager
 ) : ViewModel() {
 
     val contactId: String = savedStateHandle.get<String>("contactId").orEmpty()
+
+    /** True while any call is active anywhere — used to disable the call buttons so a
+     *  second call (this contact or another) can't be started over an ongoing one. */
+    val callActive: StateFlow<Boolean> = callManager.call
+        .map { it.state != com.aura.call.CallManager.CallState.IDLE &&
+               it.state != com.aura.call.CallManager.CallState.ENDED }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val contact: StateFlow<ContactEntity?> = contactDao.observeByNodeId(contactId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -371,6 +379,7 @@ fun ConversationScreen(
     val mediaProgress by viewModel.mediaProgress.collectAsState()
     val isRecording by viewModel.isRecording.collectAsState()
     val playingId by viewModel.playingId.collectAsState()
+    val callActive by viewModel.callActive.collectAsState()
     // Mark the conversation read on open and whenever new messages land while it's visible.
     LaunchedEffect(messages) { if (messages.isNotEmpty()) viewModel.markRead() }
     // Leave the screen if the contact disappears (we deleted it, or the peer removed us).
@@ -478,10 +487,10 @@ fun ConversationScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { launchCall(false) }) {
+                    IconButton(onClick = { launchCall(false) }, enabled = !callActive) {
                         Icon(Icons.Default.Call, contentDescription = "Voice call")
                     }
-                    IconButton(onClick = { launchCall(true) }) {
+                    IconButton(onClick = { launchCall(true) }, enabled = !callActive) {
                         Icon(Icons.Default.Videocam, contentDescription = "Video call")
                     }
                     IconButton(onClick = { timerMenuOpen = true }) {
