@@ -90,7 +90,11 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
-    // Crypto: post-quantum (liboqs JNI) + classical (Bouncy Castle)
+    // Aurora's crypto core — a standalone module published to the in-repo local
+    // Maven repo (see /crypto and libs/maven). It brings liboqs + Bouncy Castle in
+    // transitively; the native liboqs .so files live in this app module's jniLibs.
+    implementation("com.aura:aura-crypto:0.1.0")
+    // Kept explicit too (belt-and-suspenders for the native JNI + classical stack).
     implementation(libs.liboqs)
     implementation(libs.bcprov)
     implementation(libs.security.crypto)

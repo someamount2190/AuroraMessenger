@@ -1,17 +1,18 @@
 rootProject.name = "aurora"
 
-// Dependency resolution: ShadowMesh's vendored local repo is listed first so
-// artifacts that are hard to reach (liboqs-java is JitPack-only) resolve from
-// disk. Remote repos are fallbacks for anything not vendored.
+// Dependency resolution. `libs/maven` is an in-repo local Maven repository bundled
+// with the project so the build is fully standalone (no external sibling folders):
+//  - liboqs-java (org.openquantumsafe) — the post-quantum JNI wrapper, JitPack-only
+//    upstream, so it's vendored here.
+//  - aura-crypto (com.aura) — Aurora's own crypto module, built from /crypto and
+//    published into this repo (see crypto/README and crypto/build.gradle.kts).
+// Remote repos are fallbacks for everything else.
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
-        val vendored = rootProject.projectDir.resolve("../shadowmesh_v22_fixed/libs/maven")
-        if (vendored.exists() && vendored.list()?.isNotEmpty() == true) {
-            maven {
-                name = "VendoredLocal"
-                url  = uri(vendored)
-            }
+        maven {
+            name = "RepoLocal"
+            url  = uri(rootProject.projectDir.resolve("libs/maven"))
         }
         google()
         mavenCentral()
@@ -24,13 +25,6 @@ dependencyResolutionManagement {
 
 pluginManagement {
     repositories {
-        val vendored = rootProject.projectDir.resolve("../shadowmesh_v22_fixed/libs/maven")
-        if (vendored.exists() && vendored.list()?.isNotEmpty() == true) {
-            maven {
-                name = "VendoredLocal"
-                url  = uri(vendored)
-            }
-        }
         google()
         mavenCentral()
         gradlePluginPortal()

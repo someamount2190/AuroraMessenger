@@ -1,15 +1,10 @@
 package com.aura.crypto
 
-import android.util.Base64
-import com.aura.db.PrekeyDao
-import com.aura.db.PrekeyEntity
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.SecureRandom
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Forward-secret prekeys for the pairing handshake (the post-quantum X3DH / "PQXDH"
@@ -36,10 +31,13 @@ import javax.inject.Singleton
  * The public halves (each signed by our identity key) are published to the
  * rendezvous server as a bundle; an initiator who scans our QR fetches the bundle
  * and encapsulates against it. See [publicBundle] / [consume].
+ *
+ * Persistence is delegated to a host-supplied [PrekeyStore] so this class carries no
+ * database or platform dependency. It is DI-framework-agnostic; the host wires it up
+ * (Aurora provides it as a singleton from its Hilt module).
  */
-@Singleton
-class PrekeyManager @Inject constructor(
-    private val dao: PrekeyDao,
+class PrekeyManager(
+    private val store: PrekeyStore,
     private val kem: HybridKem,
     private val signer: HybridSigner
 ) {
@@ -64,10 +62,10 @@ class PrekeyManager @Inject constructor(
     suspend fun publicBundle(identity: NodeIdentity): JSONObject = mutex.withLock {
         ensureSpkLocked()
         replenishOpksLocked(OPK_POOL_TARGET)
-        dao.pruneOldSpks(System.currentTimeMillis() - (SPK_ROTATE_MS + SPK_GRACE_MS))
+        store.pruneOldSpks(System.currentTimeMillis() - (SPK_ROTATE_MS + SPK_GRACE_MS))
         val nodeId = identity.nodeId.toHex()
-        val spk = dao.currentSpk() ?: error("SPK missing after ensure")
-        val opks = dao.unusedOpks(OPK_PUBLISH_COUNT)
+        val spk = store.currentSpk() ?: error("SPK missing after ensure")
+        val opks = store.unusedOpks(OPK_PUBLISH_COUNT)
         JSONObject()
             .put("spk", prekeyJson(nodeId, KIND_SPK, spk, identity))
             .put("opks", JSONArray().apply { opks.forEach { put(prekeyJson(nodeId, KIND_OPK, it, identity)) } })
@@ -80,35 +78,35 @@ class PrekeyManager @Inject constructor(
      * the OPK was already consumed, so the caller can fail closed and ask for a fresh code.
      */
     suspend fun consume(spkId: String, opkId: String?): Consumed? = mutex.withLock {
-        val spk = dao.byId(spkId) ?: return@withLock null
+        val spk = store.byId(spkId) ?: return@withLock null
         val spkPriv = privOf(spk)
         if (opkId == null) return@withLock Consumed(spkPriv, null, opkMissing = false)
-        val opk = dao.byId(opkId) ?: return@withLock Consumed(spkPriv, null, opkMissing = true)
-        dao.delete(opk.prekeyId)            // one-time: destroy the instant it's used
+        val opk = store.byId(opkId) ?: return@withLock Consumed(spkPriv, null, opkMissing = true)
+        store.delete(opk.prekeyId)            // one-time: destroy the instant it's used
         Consumed(spkPriv, privOf(opk), opkMissing = false)
     }
 
     /** Wipe all of our prekeys (Settings → Clear all data / secure wipe). */
-    suspend fun wipeAll() = mutex.withLock { dao.deleteAll() }
+    suspend fun wipeAll() = mutex.withLock { store.deleteAll() }
 
     // ── internals ───────────────────────────────────────────────────────────
 
     private suspend fun ensureSpkLocked() {
-        val cur = dao.currentSpk()
+        val cur = store.currentSpk()
         if (cur == null || System.currentTimeMillis() - cur.createdAtMs >= SPK_ROTATE_MS) {
             generateLocked(KIND_SPK)
         }
     }
 
     private suspend fun replenishOpksLocked(target: Int) {
-        var have = dao.unusedOpkCount()
+        var have = store.unusedOpkCount()
         while (have < target) { generateLocked(KIND_OPK); have++ }
     }
 
     private suspend fun generateLocked(kind: String) {
         val kp = kem.generateKeyPair().getOrThrow()
-        dao.insert(
-            PrekeyEntity(
+        store.insert(
+            PrekeyRecord(
                 prekeyId      = randomId(),
                 kind          = kind,
                 kyberPubB64   = b64(kp.publicKey.kyberPublicKey),
@@ -121,7 +119,7 @@ class PrekeyManager @Inject constructor(
     }
 
     private suspend fun prekeyJson(
-        nodeId: String, kind: String, e: PrekeyEntity, identity: NodeIdentity
+        nodeId: String, kind: String, e: PrekeyRecord, identity: NodeIdentity
     ): JSONObject {
         val pubB64 = b64(hybridPub(e).toBytes())
         val sig = signer.signEd25519Only(
@@ -131,19 +129,19 @@ class PrekeyManager @Inject constructor(
         return JSONObject().put("id", e.prekeyId).put("pub", pubB64).put("sig", b64(sig))
     }
 
-    private fun hybridPub(e: PrekeyEntity) = HybridPublicKey(
-        kyberPublicKey  = Base64.decode(e.kyberPubB64, Base64.NO_WRAP),
-        x25519PublicKey = Base64.decode(e.x25519PubB64, Base64.NO_WRAP)
+    private fun hybridPub(e: PrekeyRecord) = HybridPublicKey(
+        kyberPublicKey  = B64.decode(e.kyberPubB64),
+        x25519PublicKey = B64.decode(e.x25519PubB64)
     )
 
-    private fun privOf(e: PrekeyEntity) = HybridPrivateKey(
-        kyberPrivateKey       = Base64.decode(e.kyberPrivB64, Base64.NO_WRAP),
-        kyberPublicKeyForSalt = Base64.decode(e.kyberPubB64, Base64.NO_WRAP),
-        x25519PrivateKey      = Base64.decode(e.x25519PrivB64, Base64.NO_WRAP)
+    private fun privOf(e: PrekeyRecord) = HybridPrivateKey(
+        kyberPrivateKey       = B64.decode(e.kyberPrivB64),
+        kyberPublicKeyForSalt = B64.decode(e.kyberPubB64),
+        x25519PrivateKey      = B64.decode(e.x25519PrivB64)
     )
 
     private fun randomId(): String = ByteArray(16).also(rng::nextBytes).toHex()
-    private fun b64(x: ByteArray) = Base64.encodeToString(x, Base64.NO_WRAP)
+    private fun b64(x: ByteArray) = B64.encode(x)
 
     companion object {
         const val KIND_SPK = "spk"

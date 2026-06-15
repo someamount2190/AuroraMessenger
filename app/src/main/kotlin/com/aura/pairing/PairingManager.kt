@@ -239,8 +239,9 @@ class PairingManager @Inject constructor(
             val ctOpkb = ctOpk?.let { Base64.decode(it, Base64.NO_WRAP) }
             val sIK  = kem.decapsulate(HybridCiphertext.fromBytes(ctIKb), identity.privatePart.kemPrivateKey).getOrThrow()
             val sSPK = kem.decapsulate(HybridCiphertext.fromBytes(ctSpkb), consumed.spkPriv).getOrThrow()
-            val sOPK = if (ctOpkb != null && consumed.opkPriv != null)
-                kem.decapsulate(HybridCiphertext.fromBytes(ctOpkb), consumed.opkPriv).getOrThrow() else null
+            val opkPriv = consumed.opkPriv   // local val: opkPriv is a cross-module nullable, can't smart-cast in place
+            val sOPK = if (ctOpkb != null && opkPriv != null)
+                kem.decapsulate(HybridCiphertext.fromBytes(ctOpkb), opkPriv).getOrThrow() else null
             val root = fsRoot(
                 initiatorHex = from, responderHex = myNodeIdHex,
                 sIK = sIK, sSPK = sSPK, sOPK = sOPK,

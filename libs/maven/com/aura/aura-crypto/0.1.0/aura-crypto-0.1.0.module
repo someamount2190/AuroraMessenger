@@ -1,0 +1,124 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.aura",
+    "module": "aura-crypto",
+    "version": "0.1.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.7"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.openquantumsafe",
+          "module": "liboqs-java",
+          "version": {
+            "requires": "0.3.0"
+          }
+        },
+        {
+          "group": "org.bouncycastle",
+          "module": "bcprov-jdk15to18",
+          "version": {
+            "requires": "1.78.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.8.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.9.23"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "aura-crypto-0.1.0.jar",
+          "url": "aura-crypto-0.1.0.jar",
+          "size": 145669,
+          "sha512": "8e6e1b5a9f16493ab79dab9e56ae0370b26c1f14f50dcc78e6445e16f2addc9d753fd24e92dd4e85c3e051de95fe42f389acdd4de3cbdcc747d438126dc532a2",
+          "sha256": "4e7e8255300d320a01b71ef4bc1dba4005b9477744b3bf74cb3b41afc990a872",
+          "sha1": "e2fb79120500966bfeeff0044e036d8147e26ed1",
+          "md5": "0206b5d9b56ba88139f0b975de3d12b7"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.openquantumsafe",
+          "module": "liboqs-java",
+          "version": {
+            "requires": "0.3.0"
+          }
+        },
+        {
+          "group": "org.bouncycastle",
+          "module": "bcprov-jdk15to18",
+          "version": {
+            "requires": "1.78.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-core",
+          "version": {
+            "requires": "1.8.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "1.9.23"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "aura-crypto-0.1.0.jar",
+          "url": "aura-crypto-0.1.0.jar",
+          "size": 145669,
+          "sha512": "8e6e1b5a9f16493ab79dab9e56ae0370b26c1f14f50dcc78e6445e16f2addc9d753fd24e92dd4e85c3e051de95fe42f389acdd4de3cbdcc747d438126dc532a2",
+          "sha256": "4e7e8255300d320a01b71ef4bc1dba4005b9477744b3bf74cb3b41afc990a872",
+          "sha1": "e2fb79120500966bfeeff0044e036d8147e26ed1",
+          "md5": "0206b5d9b56ba88139f0b975de3d12b7"
+        }
+      ]
+    }
+  ]
+}
