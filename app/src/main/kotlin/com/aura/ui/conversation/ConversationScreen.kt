@@ -405,6 +405,29 @@ fun ConversationScreen(
         else { pendingRecord = true; audioPermLauncher.launch(android.Manifest.permission.RECORD_AUDIO) }
     }
 
+    // Calls must hold mic (and camera, for video) BEFORE the call screen opens the
+    // devices — otherwise the first call comes up with a dead/black camera because the
+    // capture starts before the permission grant. So request here, then start.
+    fun isGranted(p: String) = androidx.core.content.ContextCompat.checkSelfPermission(ctx, p) ==
+        android.content.pm.PackageManager.PERMISSION_GRANTED
+    var pendingCallVideo by remember { mutableStateOf<Boolean?>(null) }
+    val callPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        val video = pendingCallVideo ?: return@rememberLauncherForActivityResult
+        pendingCallVideo = null
+        val audioOk = result[android.Manifest.permission.RECORD_AUDIO] ?: isGranted(android.Manifest.permission.RECORD_AUDIO)
+        if (audioOk != true) return@rememberLauncherForActivityResult   // a call can't run without the mic
+        val camOk = result[android.Manifest.permission.CAMERA] ?: isGranted(android.Manifest.permission.CAMERA)
+        onStartCall(viewModel.contactId, video && camOk == true)        // camera denied → fall back to a voice call
+    }
+    val launchCall: (Boolean) -> Unit = { video ->
+        val perms = if (video) arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO)
+                    else arrayOf(android.Manifest.permission.RECORD_AUDIO)
+        if (perms.all { isGranted(it) }) onStartCall(viewModel.contactId, video)
+        else { pendingCallVideo = video; callPermLauncher.launch(perms) }
+    }
+
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri -> uri?.let { viewModel.sendMedia(it, "image") } }
@@ -455,10 +478,10 @@ fun ConversationScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { onStartCall(viewModel.contactId, false) }) {
+                    IconButton(onClick = { launchCall(false) }) {
                         Icon(Icons.Default.Call, contentDescription = "Voice call")
                     }
-                    IconButton(onClick = { onStartCall(viewModel.contactId, true) }) {
+                    IconButton(onClick = { launchCall(true) }) {
                         Icon(Icons.Default.Videocam, contentDescription = "Video call")
                     }
                     IconButton(onClick = { timerMenuOpen = true }) {

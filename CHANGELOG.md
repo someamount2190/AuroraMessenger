@@ -42,6 +42,12 @@ release is refreshed as these land.
   reaches connected (and an accepted-but-unconnected call logs "ended", not "missed").
 - **Video-renderer use-after-free** during call teardown (the renderer was released before
   its sink was removed) — disposal order corrected.
+- **Video calls were unreliable until the app had been restarted several times.** Camera
+  and microphone permissions were requested *after* the call screen had already opened the
+  devices, so an early call came up with a dead/black camera — and camera-open errors were
+  silently swallowed. Permissions are now requested *before* the call starts at every
+  in-app entry point (outgoing call and incoming accept), and camera errors are logged.
+  A fresh install now does a working video call on the first try.
 - The empty-chat hint wrongly told users to tap the name to rename; it now points at the
   conversation menu.
 

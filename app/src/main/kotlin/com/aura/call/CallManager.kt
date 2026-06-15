@@ -474,7 +474,18 @@ class CallManager @Inject constructor(
         val enumerator = Camera2Enumerator(context)
         val front = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
             ?: enumerator.deviceNames.firstOrNull() ?: return null
-        return enumerator.createCapturer(front, null)
+        // A real events handler instead of null: camera-open failures (permission, busy,
+        // disconnect) used to be swallowed silently, which is exactly what made a broken
+        // first call invisible. Log them so they're diagnosable.
+        val events = object : org.webrtc.CameraVideoCapturer.CameraEventsHandler {
+            override fun onCameraError(error: String?) { android.util.Log.w("AuroraCall", "camera error: $error") }
+            override fun onCameraDisconnected() { android.util.Log.w("AuroraCall", "camera disconnected") }
+            override fun onCameraFreezed(error: String?) { android.util.Log.w("AuroraCall", "camera frozen: $error") }
+            override fun onCameraOpening(name: String?) {}
+            override fun onFirstFrameAvailable() {}
+            override fun onCameraClosed() {}
+        }
+        return enumerator.createCapturer(front, events)
     }
 
     private suspend fun createOffer(): SessionDescription = suspendSdp { obs ->

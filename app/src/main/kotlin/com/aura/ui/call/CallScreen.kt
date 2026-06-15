@@ -77,12 +77,36 @@ fun CallScreen(
     val videoEnabled by manager.videoEnabled.collectAsState()
     var muted by remember { mutableStateOf(false) }
 
-    val audioPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* permissions handled best-effort; call proceeds with what's granted */ }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    fun granted(p: String) = androidx.core.content.ContextCompat.checkSelfPermission(context, p) ==
+        android.content.pm.PackageManager.PERMISSION_GRANTED
+    fun callPerms(video: Boolean) = if (video)
+        arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+    else arrayOf(Manifest.permission.RECORD_AUDIO)
 
+    var pendingAccept by remember { mutableStateOf(false) }
+    val callPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        if (pendingAccept) {
+            pendingAccept = false
+            val audioOk = result[Manifest.permission.RECORD_AUDIO] ?: granted(Manifest.permission.RECORD_AUDIO)
+            if (audioOk == true) manager.acceptCall()   // accept once the mic (and camera, if video) is granted
+        }
+    }
+    // Pre-warm: for an incoming call (or one answered from a notification) request the
+    // call's permissions as the screen appears, so the camera/mic are ready by accept.
+    // Outgoing calls already obtained them before startCall, so don't re-ask.
     LaunchedEffect(Unit) {
-        audioPermission.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+        if (call.state != CallManager.CallState.OUTGOING) {
+            val missing = callPerms(call.isVideo).filterNot { granted(it) }
+            if (missing.isNotEmpty()) callPermission.launch(missing.toTypedArray())
+        }
+    }
+    val acceptCall = {
+        val missing = callPerms(call.isVideo).filterNot { granted(it) }
+        if (missing.isEmpty()) manager.acceptCall()
+        else { pendingAccept = true; callPermission.launch(missing.toTypedArray()) }
     }
 
     LaunchedEffect(call.state) {
@@ -168,7 +192,7 @@ fun CallScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 RoundButton(Icons.Default.CallEnd, Color.Red, "Decline") { manager.declineCall() }
-                RoundButton(Icons.Default.Call, Color(0xFF4CD97B), "Accept") { manager.acceptCall() }
+                RoundButton(Icons.Default.Call, Color(0xFF4CD97B), "Accept") { acceptCall() }
             }
         } else {
             Row(
