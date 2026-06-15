@@ -96,6 +96,13 @@ class CallManager @Inject constructor(
     @Volatile private var remoteDescSet: Boolean = false
     private val pendingRemoteIce = java.util.Collections.synchronizedList(ArrayList<IceCandidate>())
 
+    // Guards one-time disposal of the WebRTC objects. endCall()/cleanup() can fire from
+    // several paths at once — the local End button, the remote "bye", and an ICE
+    // FAILED/DISCONNECTED observer callback — and disposing the same native
+    // PeerConnection twice aborts the process with "Pure virtual function called!".
+    // Reset to false whenever a new peer connection is created.
+    private val disposed = java.util.concurrent.atomic.AtomicBoolean(true)
+
     // Whether the local camera is currently sending. Drives the in-call video
     // toggle button and hides the self-view when the camera is off.
     private val _videoEnabled = MutableStateFlow(true)
@@ -141,14 +148,14 @@ class CallManager @Inject constructor(
         )
         // Software-only VP8/VP9 codecs (libvpx, bundled in the webrtc-sdk).
         //
-        // We deliberately do NOT use DefaultVideo*Factory here. That factory
-        // advertises the device's hardware H.264/VP8 codecs and lets WebRTC pick
-        // them; it only falls back to software when hardware is *absent*, not when
-        // hardware is present-but-buggy. On some Xiaomi/POCO devices the hardware
-        // encoder aborts mid-call (native RTC_CHECK in libjingle on a worker
-        // thread), taking the whole app down. Forcing software codecs removes that
-        // path entirely. Both ends run Aurora, so both negotiate software VP8 with
-        // no loss of interop; the CPU cost is negligible for a 1:1 call.
+        // NOTE: the call crash this once seemed to address was actually a Java
+        // exception escaping a WebRTC observer callback into native code (a
+        // disqualified CallStyle notification posted on the signaling thread →
+        // RTC_CHECK(!ExceptionCheck()) → abort); that is fixed elsewhere (see
+        // onIceConnectionChange and Notifier.safeNotify). Software codecs are kept
+        // because they're maximally portable and verified working for 1:1 voice and
+        // video, with negligible CPU cost at that scale. Hardware codecs
+        // (DefaultVideoEncoderFactory) can be re-enabled later for efficiency.
         factory = PeerConnectionFactory.builder()
             .setVideoEncoderFactory(SoftwareVideoEncoderFactory())
             .setVideoDecoderFactory(SoftwareVideoDecoderFactory())
@@ -395,6 +402,7 @@ class CallManager @Inject constructor(
         val config = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
         }
+        disposed.set(false)   // a live peer connection now exists to tear down exactly once
         peerConnection = factory?.createPeerConnection(config, object : SimplePcObserver() {
             override fun onIceCandidate(candidate: IceCandidate) {
                 scope?.launch {
@@ -406,16 +414,27 @@ class CallManager @Inject constructor(
                 }
             }
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                if (state == PeerConnection.IceConnectionState.CONNECTED ||
-                    state == PeerConnection.IceConnectionState.COMPLETED) {
-                    if (callConnectedAtMs == 0L) callConnectedAtMs = System.currentTimeMillis()
-                    // Replace the incoming-ring notification with the ongoing-call
-                    // notification (same id): "call in progress" + an End control.
-                    notifier.notifyOngoingCall()
-                    _call.value = _call.value.copy(state = CallState.CONNECTED)
-                } else if (state == PeerConnection.IceConnectionState.DISCONNECTED ||
-                    state == PeerConnection.IceConnectionState.FAILED) {
-                    endCall(notifyPeer = false)
+                // CRITICAL: WebRTC delivers observer callbacks on its native signaling
+                // thread, marshalled through JNI. If anything we do here lets a Java
+                // exception escape (e.g. the system rejecting a notification), WebRTC's
+                // JNI bridge aborts the entire process via RTC_CHECK(!ExceptionCheck()).
+                // So we never touch app state inline — hop onto our own coroutine scope,
+                // where exceptions stay contained and tearing down the peer connection
+                // can't deadlock against the thread that's delivering this callback.
+                scope?.launch {
+                    when (state) {
+                        PeerConnection.IceConnectionState.CONNECTED,
+                        PeerConnection.IceConnectionState.COMPLETED -> {
+                            if (callConnectedAtMs == 0L) callConnectedAtMs = System.currentTimeMillis()
+                            // Replace the incoming-ring notification with the ongoing-call
+                            // notification (same id): "call in progress" + an End control.
+                            notifier.notifyOngoingCall()
+                            _call.value = _call.value.copy(state = CallState.CONNECTED)
+                        }
+                        PeerConnection.IceConnectionState.DISCONNECTED,
+                        PeerConnection.IceConnectionState.FAILED -> endCall(notifyPeer = false)
+                        else -> {}
+                    }
                 }
             }
             // UNIFIED_PLAN delivers the remote media through onAddTrack (the receiver's
@@ -484,20 +503,25 @@ class CallManager @Inject constructor(
         notifier.cancelCall()
         ringer.stop()
         ringTimeoutJob?.cancel()
-        // Dispose the peer connection FIRST so its senders release the tracks before we
-        // dispose the capturer/source — disposing a source still referenced by a live
-        // sender can abort inside libjingle.
-        peerConnection?.dispose()
-        try { videoCapturer?.stopCapture() } catch (e: Exception) {}
-        videoCapturer?.dispose()
-        videoSource?.dispose()
-        surfaceHelper?.dispose()
-        videoCapturer = null
-        videoSource = null
+        // Dispose the WebRTC objects exactly once, even if cleanup() is reached from two
+        // racing paths (local End + remote "bye" + ICE-failed callback). The CAS winner
+        // captures the references and disposes; losers skip it. Peer connection is
+        // disposed FIRST so its senders release the tracks before we dispose the
+        // capturer/source — disposing a source still referenced by a live sender aborts
+        // inside libjingle.
+        if (disposed.compareAndSet(false, true)) {
+            val pc = peerConnection; peerConnection = null
+            val capt = videoCapturer; videoCapturer = null
+            val src = videoSource; videoSource = null
+            val helper = surfaceHelper; surfaceHelper = null
+            pc?.dispose()
+            try { capt?.stopCapture() } catch (e: Exception) {}
+            capt?.dispose()
+            src?.dispose()
+            helper?.dispose()
+        }
         localVideoTrack = null
         localAudioTrack = null
-        surfaceHelper = null
-        peerConnection = null
         remoteNodeIdHex = null
         pendingOfferSdp = null
         pendingOfferIsVideo = true

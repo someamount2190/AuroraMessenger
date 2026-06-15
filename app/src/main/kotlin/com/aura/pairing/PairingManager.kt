@@ -73,6 +73,7 @@ class PairingManager @Inject constructor(
         data class Success(override val nodeIdHex: String) : PairEvent   // both verified → chat open
         data class Declined(override val nodeIdHex: String) : PairEvent  // peer rejected our request
         data class Failed(override val nodeIdHex: String) : PairEvent    // verification gave up (blocked)
+        data class ContactRemoved(override val nodeIdHex: String, val name: String) : PairEvent  // peer deleted us
     }
 
     private val _events = MutableSharedFlow<PairEvent>(extraBufferCapacity = 8)
@@ -301,6 +302,37 @@ class PairingManager @Inject constructor(
                 .put("dilithium", dilithiumB64).put("sig", Base64.encodeToString(sig, Base64.NO_WRAP)).toString()
         )
         _incomingPaired.tryEmit(contactNodeIdHex)   // open the verify screen
+        Unit
+    }
+
+    /**
+     * Either side, any time: remove an established contact on BOTH devices. We sign and
+     * post a `contactremove` so the peer wipes their copy and is told they lost the
+     * contact, then cryptographically erase our own. The signal is best-effort: if the
+     * peer is offline it queues server-side for their next sync; if the post fails
+     * outright we still remove our local copy, so deletion is never blocked by network.
+     */
+    suspend fun deleteContact(contactNodeIdHex: String): Result<Unit> = runCatching {
+        val identity = identityManager.getOrCreate()
+        contactDao.byNodeId(contactNodeIdHex) ?: return@runCatching Unit
+        runCatching { sendSimple("contactremove", identity.nodeId.toHex(), contactNodeIdHex, identity) }
+        eraser.wipe(contactNodeIdHex)
+        Unit
+    }
+
+    /** Peer removed us as a contact — verify, wipe our side, and surface the loss. */
+    suspend fun handleContactRemove(json: JSONObject): Result<Unit> = runCatching {
+        val myNodeIdHex = identityManager.getOrCreate().nodeId.toHex()
+        val from = json.optString("from")
+        require(json.optString("to") == myNodeIdHex) { "contactremove addressed elsewhere" }
+        val contact = contactDao.byNodeId(from) ?: return@runCatching Unit
+        if (!verifyEd("aura-contactremove-v1|$from|$myNodeIdHex", contact.ed25519PubB64, json.optString("sig"))) {
+            return@runCatching Unit
+        }
+        val name = contact.displayName
+        eraser.wipe(from)
+        notifier.notifyContactRemoved()                       // tray alert when backgrounded
+        _events.tryEmit(PairEvent.ContactRemoved(from, name)) // toast when foreground
         Unit
     }
 

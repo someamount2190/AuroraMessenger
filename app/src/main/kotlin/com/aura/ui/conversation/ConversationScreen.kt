@@ -335,6 +335,19 @@ class ConversationViewModel @Inject constructor(
         viewModelScope.launch { contactDao.rename(contactId, name.trim()) }
     }
 
+    /**
+     * Remove this contact on BOTH sides: signs and posts a `contactremove` to the
+     * peer (so their copy is wiped and they're told they lost the contact), then
+     * cryptographically erases our own copy — messages, encrypted media, ratchet
+     * state, and the contact row (see [com.aura.pairing.PairingManager.deleteContact],
+     * which reuses [com.aura.db.ContactEraser]). The screen leaves itself: once the
+     * contact row is gone the [contact] flow emits null and the UI navigates back —
+     * the same exit taken when the peer removes us, so there's a single code path.
+     */
+    fun deleteContact() {
+        viewModelScope.launch { pairingManager.deleteContact(contactId) }
+    }
+
     /** Clear the unread state for this conversation (called while it's on screen). */
     fun markRead() {
         viewModelScope.launch { messageDao.markConversationRead(contactId) }
@@ -360,10 +373,19 @@ fun ConversationScreen(
     val playingId by viewModel.playingId.collectAsState()
     // Mark the conversation read on open and whenever new messages land while it's visible.
     LaunchedEffect(messages) { if (messages.isNotEmpty()) viewModel.markRead() }
+    // Leave the screen if the contact disappears (we deleted it, or the peer removed us).
+    // Guarded by a "was loaded" latch so the momentary null on first composition (before
+    // the contact flow emits) doesn't bounce us straight back out.
+    var contactWasLoaded by remember { mutableStateOf(false) }
+    LaunchedEffect(contact) {
+        if (contact != null) contactWasLoaded = true
+        else if (contactWasLoaded) onBack()
+    }
     var draft by remember { mutableStateOf("") }
     var menuOpen by remember { mutableStateOf(false) }
     var timerMenuOpen by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
     var viewerMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var replyingTo by remember { mutableStateOf<MessageEntity?>(null) }
     val listState = rememberLazyListState()
@@ -458,6 +480,10 @@ fun ConversationScreen(
                             text = { Text("Rename contact") },
                             onClick = { menuOpen = false; showRename = true }
                         )
+                        DropdownMenuItem(
+                            text = { Text("Delete contact", color = MaterialTheme.colorScheme.error) },
+                            onClick = { menuOpen = false; showDelete = true }
+                        )
                     }
                 }
             )
@@ -507,7 +533,7 @@ fun ConversationScreen(
                 // Empty new chat: gentle hint to rename (replaces the old name prompt).
                 if (messages.isEmpty() && contact?.nicknameSet == false) {
                     Text(
-                        "You're connected. Tap the name at the top to give this contact a name.",
+                        "You're connected. Open the menu in the top corner and choose Rename contact to give them a name.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -637,6 +663,31 @@ fun ConversationScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRename = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showDelete) {
+        val name = contact?.displayName ?: "this contact"
+        AlertDialog(
+            onDismissRequest = { showDelete = false },
+            title = { Text("Delete contact?") },
+            text = {
+                Text(
+                    "This permanently removes $name along with the entire conversation, " +
+                    "shared media, and encryption keys on this device. It cannot be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDelete = false
+                    viewModel.deleteContact()
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDelete = false }) { Text("Cancel") }
             }
         )
     }

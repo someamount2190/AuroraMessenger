@@ -180,6 +180,7 @@ class SyncEngine @Inject constructor(
                 "pairreject"  -> pairingManager.handlePairReject(json)
                 "paircancel"  -> pairingManager.handlePairCancel(json)
                 "pairverify"  -> pairingManager.handlePairVerify(json)
+                "contactremove" -> pairingManager.handleContactRemove(json)
                 else          -> signalHandlers[type]?.invoke(json)
             }
         }

@@ -86,7 +86,7 @@ class Notifier @Inject constructor(
             .setAutoCancel(true)
             .setContentIntent(launchIntent())
             .build()
-        NotificationManagerCompat.from(context).notify(ID_MESSAGE, n)
+        safeNotify(ID_MESSAGE, n)
     }
 
     /**
@@ -119,7 +119,7 @@ class Notifier @Inject constructor(
                 .addAction(R.drawable.ic_notification, "Decline", decline)
                 .addAction(R.drawable.ic_notification, "Answer", answer)
         }
-        NotificationManagerCompat.from(context).notify(ID_CALL, builder.build())
+        safeNotify(ID_CALL, builder.build())
     }
 
     /** Activity intent that opens the call UI and answers (carries ACTION_ANSWER_CALL). */
@@ -161,6 +161,13 @@ class Notifier @Inject constructor(
     fun notifyOngoingCall() {
         if (!canPost()) return
         val end = endIntent()
+        // NOTE: deliberately a plain notification, NOT CallStyle.forOngoingCall.
+        // A CallStyle *ongoing* notification is "disqualified" by the system unless it
+        // is tied to a running foreground service; posting one anyway makes
+        // NotificationManagerService throw. Because this is posted from a WebRTC
+        // observer callback (native signaling thread, via JNI), that exception would
+        // abort the whole process. A plain ongoing notification carries the same
+        // "tap to return" + End controls without the foreground-service requirement.
         val builder = NotificationCompat.Builder(context, CH_CALLS)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_CALL)
@@ -168,15 +175,20 @@ class Notifier @Inject constructor(
             .setOngoing(true)
             .setAutoCancel(false)
             .setContentIntent(openCallIntent())
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val caller = androidx.core.app.Person.Builder().setName("Aurora call").build()
-            builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(caller, end))
-        } else {
-            builder.setContentTitle("Aurora call in progress")
-                .setContentText("Tap to return to the call")
-                .addAction(R.drawable.ic_notification, "End", end)
-        }
-        NotificationManagerCompat.from(context).notify(ID_CALL, builder.build())
+            .setContentTitle("Aurora call in progress")
+            .setContentText("Tap to return to the call")
+            .addAction(R.drawable.ic_notification, "End", end)
+        safeNotify(ID_CALL, builder.build())
+    }
+
+    /**
+     * Post a notification without ever throwing. The system can reject a notification
+     * (disqualifying features, rate limits, revoked permission); some of ours are
+     * posted from a WebRTC observer callback running on the native signaling thread,
+     * where an escaping Java exception aborts the whole process via JNI. Swallow it.
+     */
+    private fun safeNotify(id: Int, n: android.app.Notification) {
+        runCatching { NotificationManagerCompat.from(context).notify(id, n) }
     }
 
     /** Activity intent that opens the app and restores (expands) the minimized call. */
@@ -217,11 +229,31 @@ class Notifier @Inject constructor(
             .setAutoCancel(true)
             .setContentIntent(launchIntent())
             .build()
-        NotificationManagerCompat.from(context).notify(ID_CONTACT_REQ, n)
+        safeNotify(ID_CONTACT_REQ, n)
     }
 
     fun cancelContactRequest() {
         NotificationManagerCompat.from(context).cancel(ID_CONTACT_REQ)
+    }
+
+    /**
+     * A peer removed us as a contact (the conversation has been deleted on both ends).
+     * Generic and name-free like the other alerts, so nothing identifying shows on the
+     * lock screen or in the tray; the in-app toast names the contact instead.
+     */
+    fun notifyContactRemoved() {
+        if (foreground.isForeground) return
+        if (!canPost()) return
+        val n = NotificationCompat.Builder(context, CH_MESSAGES)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Aurora")
+            .setContentText("A contact removed you")
+            .setCategory(NotificationCompat.CATEGORY_SOCIAL)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(launchIntent())
+            .build()
+        safeNotify(ID_CONTACT_REMOVED, n)
     }
 
     companion object {
@@ -236,5 +268,6 @@ class Notifier @Inject constructor(
         private const val ID_MESSAGE = 1001
         private const val ID_CALL = 1002
         private const val ID_CONTACT_REQ = 1003
+        private const val ID_CONTACT_REMOVED = 1004
     }
 }

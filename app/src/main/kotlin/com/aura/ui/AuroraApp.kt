@@ -151,6 +151,7 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
                 is com.aura.pairing.PairingManager.PairEvent.Accepted -> "Accepted — verify the codes to start chatting"
                 is com.aura.pairing.PairingManager.PairEvent.Declined -> "Your request was declined"
                 is com.aura.pairing.PairingManager.PairEvent.Failed   -> "Verification failed — contact removed"
+                is com.aura.pairing.PairingManager.PairEvent.ContactRemoved -> "${ev.name} removed you as a contact"
             }
             android.widget.Toast.makeText(appContext, msg, android.widget.Toast.LENGTH_SHORT).show()
         }
