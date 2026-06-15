@@ -49,7 +49,9 @@ that today's public-key cryptography will remain unbroken.
 ## Features
 
 - Text and media messaging (photos/video, app-private encrypted storage)
-- Voice and video calls (WebRTC) with real incoming-call ringing and lock-screen handling
+- Voice and video calls (WebRTC) with real incoming-call ringing and lock-screen handling;
+  an in-app ongoing-call bar and a floating system overlay keep a live call visible (and
+  one tap away) while you use the rest of the phone, and a second call can't start while one is active
 - Message replies, reactions, and disappearing messages (per-conversation timers)
 - App lock with a decoy PIN, optional **duress wipe**, and screenshot/recents protection (`FLAG_SECURE`)
 - **Cryptographic erase**: destroying keys renders all on-disk ciphertext unrecoverable instantly
@@ -104,9 +106,10 @@ server on carrier-grade NAT).
 | Path | Contents |
 |---|---|
 | `app/` | Android app (Kotlin, Jetpack Compose, Hilt, Room) |
-| `app/src/main/kotlin/com/aura/crypto` | Hybrid KEM/signatures, HKDF, ratchet, prekeys |
+| `crypto/` | `com.aura:aura-crypto` — standalone, Android-free post-quantum crypto core (hybrid KEM/signatures, HKDF, ratchet, prekeys) |
 | `app/src/main/kotlin/com/aura/server` | In-app rendezvous server (NanoHTTPD) |
 | `rendezvous-server/` | Standalone Node.js rendezvous server (zero runtime deps) |
+| `libs/maven/` | In-repo Maven repository: vendored `liboqs-java` + the published `aura-crypto` artifact |
 | `app/schemas/` | Room schema exports (migration baseline, committed) |
 
 ## Build & run
@@ -116,18 +119,23 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\gradlew.bat assembleDebug
 ```
 
-> **Build prerequisite (important for contributors):** dependency resolution expects a
-> sibling project, `../shadowmesh_v22_fixed`, whose vendored Maven repo
-> (`../shadowmesh_v22_fixed/libs/maven`) provides the JitPack-only `liboqs-java` and the
-> ported `com.aura.crypto` primitives. A fresh clone of this repo alone will **not**
-> build until that dependency is vendored in or obtained separately. (Resolving this
-> for standalone builds is on the roadmap.)
+> **Standalone build.** Everything the build needs is vendored in-repo under `libs/maven`
+> (an in-repo Maven repository), so a fresh clone builds on its own — no external sibling
+> folders required. That repo holds the JitPack-only `liboqs-java` JNI wrapper and Aurora's
+> own `com.aura:aura-crypto` artifact. If you change anything under `crypto/`, re-publish it
+> into `libs/maven` before rebuilding the app:
+>
+> ```powershell
+> .\gradlew.bat -p crypto publish   # republishes com.aura:aura-crypto into libs/maven
+> ```
 
 ## Security architecture (summary)
 
-- **`com.aura.crypto`**: `HybridKem` (Kyber-1024 + X25519), `HybridSigner`
-  (Dilithium-3 + Ed25519), `SymmetricCipher` (XChaCha20-Poly1305), HKDF-SHA3-256,
-  `RatchetManager` (forward-secret double-ratchet), `PrekeyManager` (PQXDH prekeys).
+- **`com.aura.crypto`** (the standalone `crypto/` module): `HybridKem` (Kyber-1024 +
+  X25519), `HybridSigner` (Dilithium-3 + Ed25519), `SymmetricCipher` (XChaCha20-Poly1305),
+  HKDF-SHA3-256, `RatchetManager` (forward-secret double-ratchet), `PrekeyManager`
+  (PQXDH prekeys). It has no Android dependency and persists through storage interfaces
+  the host app implements.
 - **`com.aura.identity`**: node identity generated on first launch, stored in
   EncryptedSharedPreferences (master key in the Android Keystore; post-quantum keys are
   too large to live in the Keystore directly).
@@ -158,9 +166,10 @@ that would happen. Either way, Aurora is the near-term focus, and it is expected
 **grow well beyond its current scope** over time; today's two-person messenger is a
 foundation, not the finished shape.
 
-This lineage is also why the build currently depends on the sibling
-`shadowmesh_v22_fixed` repo (see *Build & run* above). Decoupling Aurora so it
-builds standalone is part of that growth.
+That crypto core has since been extracted into its own standalone, Android-free module
+(`crypto/`, published as `com.aura:aura-crypto`) and vendored in-repo under `libs/maven`,
+so the build no longer depends on the ShadowMesh sibling folder — a fresh clone builds on
+its own.
 
 ### Key design decisions
 
@@ -221,3 +230,8 @@ from the ShadowMesh project.
 
 *This software is provided without warranty. It has not undergone an independent
 third-party security audit; do not rely on it for high-risk threat models until it has.*
+
+## Author
+
+Built by **Christian Lim Correa**, a Filipino developer. Questions and security reports
+are welcome at christiancorrea26@gmail.com.
