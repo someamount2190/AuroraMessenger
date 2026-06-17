@@ -6,7 +6,11 @@ import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.db.MessageDao
 import com.aura.db.MessageEntity
-import com.aura.identity.IdentityManager
+import com.aura.identity.IdentityStore
+import com.aura.di.IoDispatcher
+import com.aura.settings.AuroraSettings
+import com.aura.ux.MessagePulse
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,12 +33,13 @@ import javax.inject.Singleton
  */
 @Singleton
 class TcpMessageServer @Inject constructor(
-    private val identityManager: IdentityManager,
+    private val identityManager: IdentityStore,
     private val ratchet: RatchetManager,
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
-    private val settings: com.aura.settings.AuroraSettings,
-    private val messagePulse: com.aura.ux.MessagePulse
+    private val settings: AuroraSettings,
+    private val messagePulse: MessagePulse,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private var serverSocket: ServerSocket? = null
     private var job: Job? = null
@@ -57,7 +62,7 @@ class TcpMessageServer @Inject constructor(
         if (job?.isActive == true && serverSocket?.isClosed == false) return
         try { serverSocket?.close() } catch (e: Exception) {}
         job?.cancel()
-        job = scope.launch(Dispatchers.IO) {
+        job = scope.launch(ioDispatcher) {
             try {
                 val ss = ServerSocket()
                 ss.reuseAddress = true
@@ -76,7 +81,7 @@ class TcpMessageServer @Inject constructor(
                     }
                     activeConnections.incrementAndGet()
                     ipCount.incrementAndGet()
-                    launch(Dispatchers.IO) {
+                    launch(ioDispatcher) {
                         try { handleConnection(socket) } catch (e: Exception) {
                             android.util.Log.w("AuroraTcp", "connection handler failed: ${e.message}")
                         } finally {

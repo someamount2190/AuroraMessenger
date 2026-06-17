@@ -2,14 +2,16 @@ package com.aura.network
 
 import com.aura.crypto.PrekeyManager
 import com.aura.crypto.toHex
-import com.aura.identity.IdentityManager
+import com.aura.identity.IdentityStore
 import com.aura.notify.Notifier
-import com.aura.pairing.PairingManager
+import com.aura.pairing.PairingCoordinator
 import com.aura.settings.AuroraSettings
 import com.aura.transport.MessageSender
 import com.aura.transport.TcpMessageServer
 import com.aura.ux.MessagePulse
 import android.util.Log
+import com.aura.di.IoDispatcher
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,19 +37,20 @@ import javax.inject.Singleton
  */
 @Singleton
 class SyncEngine @Inject constructor(
-    private val identityManager: IdentityManager,
+    private val identityManager: IdentityStore,
     private val rendezvousClient: RendezvousClient,
     private val prekeyManager: PrekeyManager,
-    private val pairingManager: PairingManager,
+    private val pairingManager: PairingCoordinator,
     private val messageSender: MessageSender,
     private val tcpServer: TcpMessageServer,
     private val settings: AuroraSettings,
     private val messagePulse: MessagePulse,
-    private val notifier: Notifier
+    private val notifier: Notifier,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     // Process-lifetime scope: the sync loop and TCP server must survive Activity
     // destruction (BACK to launcher), so they never run on a viewModelScope.
-    private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val engineScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private var job: Job? = null
     private var lastCheckinMs = 0L
     // When the current run of undelivered outbound messages began (0 = none pending).

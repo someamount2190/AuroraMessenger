@@ -32,7 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.aura.call.CallManager
+import com.aura.call.CallController
 import kotlinx.coroutines.delay
 
 /**
@@ -42,7 +42,7 @@ import kotlinx.coroutines.delay
  * tapping the bar returns to the full call screen, and the End button hangs up.
  */
 @Composable
-fun OngoingCallBar(callManager: CallManager, onExpand: () -> Unit) {
+fun OngoingCallBar(callManager: CallController, onExpand: () -> Unit) {
     val call by callManager.call.collectAsState()
 
     // Tick once a second so the timer stays current.
@@ -51,9 +51,9 @@ fun OngoingCallBar(callManager: CallManager, onExpand: () -> Unit) {
 
     val label = when {
         call.connectedAtMs > 0L -> formatDuration(nowMs - call.connectedAtMs)
-        call.state == CallManager.CallState.OUTGOING   -> "Calling…"
-        call.state == CallManager.CallState.CONNECTING -> "Connecting…"
-        call.state == CallManager.CallState.INCOMING   -> "Incoming call"
+        call.state == CallController.CallState.OUTGOING   -> "Calling…"
+        call.state == CallController.CallState.CONNECTING -> "Connecting…"
+        call.state == CallController.CallState.INCOMING   -> "Incoming call"
         else -> "On call"
     }
 

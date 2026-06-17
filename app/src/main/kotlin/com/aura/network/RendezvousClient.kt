@@ -5,8 +5,10 @@ import com.aura.crypto.HybridPublicKey
 import com.aura.crypto.HybridSigner
 import com.aura.crypto.NodeIdentity
 import com.aura.crypto.toHex
+import com.aura.di.IoDispatcher
 import com.aura.server.AuroraRendezvousServer
 import com.aura.server.RendezvousServerController
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.CertificatePinner
@@ -29,7 +31,8 @@ class DrainUnauthorizedException : Exception("signal drain unauthorized — re-c
  */
 @Singleton
 class RendezvousClient @Inject constructor(
-    private val signer: HybridSigner
+    private val signer: HybridSigner,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private val http = pinned(
         OkHttpClient.Builder()
@@ -91,7 +94,7 @@ class RendezvousClient @Inject constructor(
         identity: NodeIdentity,
         listenPort: Int = DEFAULT_LISTEN_PORT,
         advertisedOverride: String? = null
-    ): Result<String> = withContext(Dispatchers.IO) {
+    ): Result<String> = withContext(ioDispatcher) {
         runCatching {
             val nodeIdHex = identity.nodeId.toHex()
             var ip = RendezvousServerController.localIpAddress()
@@ -146,7 +149,7 @@ class RendezvousClient @Inject constructor(
      * which candidate's signature matches the target node's Ed25519 public key.
      */
     suspend fun find(serverBaseUrl: String, nodeIdHex: String): Result<List<FindCandidate>> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             runCatching {
                 val request = Request.Builder()
                     .url("$serverBaseUrl/find/$nodeIdHex")
@@ -174,7 +177,7 @@ class RendezvousClient @Inject constructor(
      * Probe a rendezvous base URL with a short-timeout GET /checkin.
      * Used by the scanner to pick the first reachable candidate from a host QR.
      */
-    suspend fun probe(serverBaseUrl: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun probe(serverBaseUrl: String): Boolean = withContext(ioDispatcher) {
         runCatching {
             val request = Request.Builder().url("$serverBaseUrl/checkin").get().build()
             probeHttp.newCall(request).execute().use { it.isSuccessful }
@@ -189,7 +192,7 @@ class RendezvousClient @Inject constructor(
 
     /** POST an opaque payload to [nodeIdHex]'s signal queue (pairing, call signaling). */
     suspend fun postSignal(serverBaseUrl: String, nodeIdHex: String, payload: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             runCatching {
                 val request = Request.Builder()
                     .url("$serverBaseUrl/signal/$nodeIdHex")
@@ -208,7 +211,7 @@ class RendezvousClient @Inject constructor(
      * [DrainUnauthorizedException] on a 401 so the caller can re-register and retry.
      */
     suspend fun getSignals(serverBaseUrl: String, identity: NodeIdentity): Result<List<String>> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             runCatching {
                 val nodeIdHex = identity.nodeId.toHex()
                 val ts = System.currentTimeMillis()
@@ -246,7 +249,7 @@ class RendezvousClient @Inject constructor(
      * older server that lacks /wait (404) so the caller falls back to plain polling.
      */
     suspend fun waitForWake(serverBaseUrl: String, identity: NodeIdentity): Result<Boolean> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             runCatching {
                 val nodeIdHex = identity.nodeId.toHex()
                 val ts = System.currentTimeMillis()
@@ -279,7 +282,7 @@ class RendezvousClient @Inject constructor(
      * parked /wait. Failures are swallowed (peer may simply not be parked).
      */
     suspend fun tap(serverBaseUrl: String, peerNodeIdHex: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             runCatching {
                 val request = Request.Builder()
                     .url("$serverBaseUrl/tap/$peerNodeIdHex")
@@ -339,7 +342,7 @@ class RendezvousClient @Inject constructor(
         serverBaseUrl: String,
         identity: NodeIdentity,
         bundleJson: String
-    ): Result<Unit> = withContext(Dispatchers.IO) {
+    ): Result<Unit> = withContext(ioDispatcher) {
         runCatching {
             val nodeIdHex = identity.nodeId.toHex()
             val ts = System.currentTimeMillis()
@@ -367,7 +370,7 @@ class RendezvousClient @Inject constructor(
      * (404) — the caller then runs the legacy identity-key-only handshake.
      */
     suspend fun fetchPrekeyBundle(serverBaseUrl: String, nodeIdHex: String): Result<PrekeyBundle?> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             runCatching {
                 val request = Request.Builder().url("$serverBaseUrl/prekeys/$nodeIdHex").get().build()
                 http.newCall(request).execute().use { resp ->

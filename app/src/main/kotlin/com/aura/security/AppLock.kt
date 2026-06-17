@@ -27,7 +27,7 @@ import javax.inject.Singleton
  *   guessing.
  */
 @Singleton
-class AppLockManager @Inject constructor(
+class AppLock @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     enum class UnlockResult { REAL, DECOY, WRONG, LOCKED_OUT }

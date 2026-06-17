@@ -59,11 +59,11 @@
         {
           "name": "aura-crypto-0.1.0.jar",
           "url": "aura-crypto-0.1.0.jar",
-          "size": 145669,
-          "sha512": "8e6e1b5a9f16493ab79dab9e56ae0370b26c1f14f50dcc78e6445e16f2addc9d753fd24e92dd4e85c3e051de95fe42f389acdd4de3cbdcc747d438126dc532a2",
-          "sha256": "4e7e8255300d320a01b71ef4bc1dba4005b9477744b3bf74cb3b41afc990a872",
-          "sha1": "e2fb79120500966bfeeff0044e036d8147e26ed1",
-          "md5": "0206b5d9b56ba88139f0b975de3d12b7"
+          "size": 146127,
+          "sha512": "55449678038d8017d77eff33f4a87d5507935d01a93b73f4bd1db264a14552217b62ddbdec4018d8bba2a53190446bfe2ac8a8b795935332e549dbff648959cb",
+          "sha256": "e733a832d619f344617614c0fed33f277e873127469b448f9efff73f0f55c0a6",
+          "sha1": "d11d476a82244c4ecd9a398c186310ef5ec5b177",
+          "md5": "18216e319dd114f32657cd5ad11b0c3d"
         }
       ]
     },
@@ -112,11 +112,11 @@
         {
           "name": "aura-crypto-0.1.0.jar",
           "url": "aura-crypto-0.1.0.jar",
-          "size": 145669,
-          "sha512": "8e6e1b5a9f16493ab79dab9e56ae0370b26c1f14f50dcc78e6445e16f2addc9d753fd24e92dd4e85c3e051de95fe42f389acdd4de3cbdcc747d438126dc532a2",
-          "sha256": "4e7e8255300d320a01b71ef4bc1dba4005b9477744b3bf74cb3b41afc990a872",
-          "sha1": "e2fb79120500966bfeeff0044e036d8147e26ed1",
-          "md5": "0206b5d9b56ba88139f0b975de3d12b7"
+          "size": 146127,
+          "sha512": "55449678038d8017d77eff33f4a87d5507935d01a93b73f4bd1db264a14552217b62ddbdec4018d8bba2a53190446bfe2ac8a8b795935332e549dbff648959cb",
+          "sha256": "e733a832d619f344617614c0fed33f277e873127469b448f9efff73f0f55c0a6",
+          "sha1": "d11d476a82244c4ecd9a398c186310ef5ec5b177",
+          "md5": "18216e319dd114f32657cd5ad11b0c3d"
         }
       ]
     }

@@ -15,7 +15,7 @@ import javax.inject.Singleton
  * disappearing-timer sync, so the server never sees who reacted with what.
  */
 @Singleton
-class ReactionManager @Inject constructor(
+class Reactions @Inject constructor(
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val messageSender: MessageSender,

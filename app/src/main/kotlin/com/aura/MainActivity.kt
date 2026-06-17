@@ -15,11 +15,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.aura.security.AppLockManager
+import com.aura.call.CallController
+import com.aura.call.CallController.CallState
+import com.aura.call.CallOverlay
+import com.aura.notify.Notifier
+import com.aura.security.AppLock
 import com.aura.settings.AuroraSettings
 import com.aura.settings.ThemeMode
 import com.aura.share.PendingShare
 import com.aura.share.ShareIntentBus
+import com.aura.share.ShareShortcuts
 import com.aura.ui.AuroraApp
 import com.aura.ui.theme.AuroraTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -29,11 +34,11 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject lateinit var appLockManager: AppLockManager
+    @Inject lateinit var appLockManager: AppLock
     @Inject lateinit var shareIntentBus: ShareIntentBus
     @Inject lateinit var auroraSettings: AuroraSettings
-    @Inject lateinit var callManager: com.aura.call.CallManager
-    @Inject lateinit var overlayManager: com.aura.call.CallOverlayManager
+    @Inject lateinit var callManager: CallController
+    @Inject lateinit var overlayManager: CallOverlay
 
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* best-effort */ }
@@ -73,14 +78,14 @@ class MainActivity : ComponentActivity() {
 
     /** The notification's Answer button launches us with this action — accept the call. */
     private fun handleCallAnswer(intent: Intent?) {
-        if (intent?.action == com.aura.notify.Notifier.ACTION_ANSWER_CALL) {
+        if (intent?.action == Notifier.ACTION_ANSWER_CALL) {
             callManager.acceptCall()
         }
     }
 
     /** Tapping the ongoing-call notification restores the minimized call to full screen. */
     private fun handleCallOpen(intent: Intent?) {
-        if (intent?.action == com.aura.notify.Notifier.ACTION_OPEN_CALL) {
+        if (intent?.action == Notifier.ACTION_OPEN_CALL) {
             callManager.expand()
         }
     }
@@ -94,10 +99,10 @@ class MainActivity : ComponentActivity() {
     private fun observeCallWindowFlags() {
         lifecycleScope.launch {
             callManager.call.collect { info ->
-                val active = info.state == com.aura.call.CallManager.CallState.INCOMING ||
-                    info.state == com.aura.call.CallManager.CallState.OUTGOING ||
-                    info.state == com.aura.call.CallManager.CallState.CONNECTING ||
-                    info.state == com.aura.call.CallManager.CallState.CONNECTED
+                val active = info.state == CallState.INCOMING ||
+                    info.state == CallState.OUTGOING ||
+                    info.state == CallState.CONNECTING ||
+                    info.state == CallState.CONNECTED
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                     setShowWhenLocked(active)
                     setTurnScreenOn(active)
@@ -165,10 +170,10 @@ class MainActivity : ComponentActivity() {
         // If a call is live, float it over other apps (Messenger/Viber-style bubble) so
         // leaving Aurora doesn't drop the call from view. No-op without the overlay grant.
         val s = callManager.call.value.state
-        val callActive = s == com.aura.call.CallManager.CallState.OUTGOING ||
-            s == com.aura.call.CallManager.CallState.INCOMING ||
-            s == com.aura.call.CallManager.CallState.CONNECTING ||
-            s == com.aura.call.CallManager.CallState.CONNECTED
+        val callActive = s == CallState.OUTGOING ||
+            s == CallState.INCOMING ||
+            s == CallState.CONNECTING ||
+            s == CallState.CONNECTED
         if (callActive) overlayManager.show()
     }
 
@@ -201,7 +206,7 @@ class MainActivity : ComponentActivity() {
         intent ?: return
         // A contact shortcut (direct-share row / launcher long-press) was tapped.
         if (intent.action == Intent.ACTION_VIEW) {
-            intent.getStringExtra(com.aura.share.ShareShortcutManager.EXTRA_CONTACT_NODE_ID)
+            intent.getStringExtra(ShareShortcuts.EXTRA_CONTACT_NODE_ID)
                 ?.let { shareIntentBus.offerOpenContact(it); return }
         }
         val share = when (intent.action) {

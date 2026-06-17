@@ -12,6 +12,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.aura.MainActivity
 import com.aura.R
+import com.aura.call.CallActionReceiver
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -139,7 +140,7 @@ class Notifier @Inject constructor(
     /** Broadcast intent that declines without opening the app. */
     private fun declineIntent(): PendingIntent {
         val intent = Intent(context, com.aura.call.CallActionReceiver::class.java).apply {
-            action = com.aura.call.CallActionReceiver.ACTION_DECLINE
+            action = CallActionReceiver.ACTION_DECLINE
         }
         return PendingIntent.getBroadcast(
             context, 2, intent,
@@ -208,7 +209,7 @@ class Notifier @Inject constructor(
     /** Broadcast intent that ends an in-progress call without opening the app. */
     private fun endIntent(): PendingIntent {
         val intent = Intent(context, com.aura.call.CallActionReceiver::class.java).apply {
-            action = com.aura.call.CallActionReceiver.ACTION_END
+            action = CallActionReceiver.ACTION_END
         }
         return PendingIntent.getBroadcast(
             context, 3, intent,

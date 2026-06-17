@@ -11,6 +11,8 @@ import com.aura.R
 import com.aura.db.ContactDao
 import com.aura.db.ContactEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.aura.di.IoDispatcher
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
@@ -25,11 +27,12 @@ import javax.inject.Singleton
  * them as ranked share targets.
  */
 @Singleton
-class ShareShortcutManager @Inject constructor(
+class ShareShortcuts @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val contactDao: ContactDao
+    private val contactDao: ContactDao,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(ioDispatcher)
     private var started = false
 
     fun start() {

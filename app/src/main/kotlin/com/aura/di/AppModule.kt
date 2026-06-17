@@ -11,7 +11,7 @@ import com.aura.crypto.RatchetStore
 import com.aura.crypto.SymmetricCipher
 import com.aura.db.AuroraDatabase
 import com.aura.db.ContactDao
-import com.aura.db.DbKeyManager
+import com.aura.db.DbKeyStore
 import com.aura.db.MeshPeerDao
 import com.aura.db.MessageDao
 import com.aura.db.PrekeyDao
@@ -44,7 +44,7 @@ object AppModule {
     @Provides @Singleton
     fun provideDatabase(
         @ApplicationContext context: Context,
-        dbKeyManager: DbKeyManager
+        dbKeyManager: DbKeyStore
     ): AuroraDatabase = AuroraDatabase.build(context, dbKeyManager.getOrCreate())
 
     @Provides

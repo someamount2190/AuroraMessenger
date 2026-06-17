@@ -102,10 +102,9 @@ fun ShareScreen(
     val contacts by viewModel.contacts.collectAsState()
     val pending by viewModel.pending.collectAsState()
 
-    val summary = when {
-        pending == null              -> ""
-        pending!!.isMedia            -> "${pending!!.uris.size} ${pending!!.mediaType}(s)"
-        else                         -> "\"${pending!!.text?.take(60) ?: ""}\""
+    val summary = when (val p = pending) {
+        null            -> ""
+        else            -> if (p.isMedia) "${p.uris.size} ${p.mediaType}(s)" else "\"${p.text?.take(60) ?: ""}\""
     }
 
     Scaffold(

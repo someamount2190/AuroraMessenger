@@ -1,5 +1,6 @@
 package com.aura.crypto
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.bouncycastle.crypto.InvalidCipherTextException
@@ -25,7 +26,11 @@ import java.security.SecureRandom
  * Aurora has no pre-AAD ciphertext to migrate, so a failed AAD-bound
  * decryption is always a hard failure).
  */
-class SymmetricCipher {
+class SymmetricCipher(
+    // Injected (with a sensible default) so tests can supply a TestDispatcher and so
+    // dispatcher choice isn't hardcoded — per the Android coroutines best-practice guide.
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
 
     private val rng = SecureRandom()
 
@@ -40,7 +45,7 @@ class SymmetricCipher {
         key:       ByteArray,
         aad:       ByteArray? = null
     ): CryptoResult<ByteArray> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 require(key.size == KEY_BYTES) {
                     "Key must be $KEY_BYTES bytes, got ${key.size}"
@@ -63,7 +68,7 @@ class SymmetricCipher {
         key:                 ByteArray,
         aad:                 ByteArray? = null
     ): CryptoResult<ByteArray> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 require(key.size == KEY_BYTES) {
                     "Key must be $KEY_BYTES bytes, got ${key.size}"

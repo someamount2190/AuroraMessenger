@@ -15,7 +15,9 @@ import com.aura.db.MessageDao
 import com.aura.db.MessageEntity
 import com.aura.db.RatchetDao
 import com.aura.db.RatchetStateEntity
-import com.aura.identity.IdentityManager
+import com.aura.di.IoDispatcher
+import com.aura.identity.IdentityStore
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.bouncycastle.crypto.generators.Argon2BytesGenerator
@@ -41,15 +43,16 @@ import javax.inject.Singleton
  * bloat the file) — media messages restore as rows but their previews won't load.
  */
 @Singleton
-class BackupManager @Inject constructor(
-    private val identityManager: IdentityManager,
+class Backups @Inject constructor(
+    private val identityManager: IdentityStore,
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val ratchetDao: RatchetDao,
-    private val cipher: SymmetricCipher
+    private val cipher: SymmetricCipher,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     /** Build an encrypted backup blob (the bytes the caller writes to a user-chosen file). */
-    suspend fun export(passphrase: CharArray): ByteArray = withContext(Dispatchers.IO) {
+    suspend fun export(passphrase: CharArray): ByteArray = withContext(ioDispatcher) {
         val identity = identityManager.getOrCreate()
         val inner = JSONObject()
             .put("v", DATA_VERSION)
@@ -80,7 +83,7 @@ class BackupManager @Inject constructor(
      * should hard-exit on success so the restored identity loads cleanly next launch.
      */
     suspend fun import(blob: ByteArray, passphrase: CharArray): Result<Unit> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             runCatching {
                 val container = JSONObject(String(blob, Charsets.UTF_8))
                 require(container.optString("magic") == MAGIC) { "Not an Aurora backup file" }

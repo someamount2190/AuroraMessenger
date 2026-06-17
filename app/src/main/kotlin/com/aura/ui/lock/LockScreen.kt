@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.aura.security.AppLockManager
+import com.aura.security.AppLock
 import com.aura.security.SecureWipe
 import com.aura.settings.AuroraSettings
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -41,15 +41,15 @@ import javax.inject.Inject
 
 @HiltViewModel
 class LockViewModel @Inject constructor(
-    val appLockManager: AppLockManager,
+    val appLockManager: AppLock,
     private val settings: AuroraSettings,
     private val secureWipe: SecureWipe
 ) : ViewModel() {
-    fun unlock(pin: String): AppLockManager.UnlockResult {
+    fun unlock(pin: String): AppLock.UnlockResult {
         val result = appLockManager.tryUnlock(pin)
         // Duress mode: the decoy PIN was configured to wipe, not just hide. Erase
         // everything and hard-exit — to an onlooker the app simply opened and closed.
-        if (result == AppLockManager.UnlockResult.DECOY && settings.duressWipe.value) {
+        if (result == AppLock.UnlockResult.DECOY && settings.duressWipe.value) {
             viewModelScope.launch {
                 secureWipe.wipeEverything()
                 secureWipe.exitProcess()
@@ -129,8 +129,8 @@ fun LockScreen(viewModel: LockViewModel = hiltViewModel()) {
         Button(
             onClick = {
                 val result = viewModel.unlock(pin)
-                if (result == AppLockManager.UnlockResult.WRONG ||
-                    result == AppLockManager.UnlockResult.LOCKED_OUT) {
+                if (result == AppLock.UnlockResult.WRONG ||
+                    result == AppLock.UnlockResult.LOCKED_OUT) {
                     error = true
                     pin = ""
                 }

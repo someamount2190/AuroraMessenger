@@ -45,7 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.aura.pairing.PairingManager
+import com.aura.pairing.PairingCoordinator
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
@@ -67,7 +67,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ScanViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val pairingManager: PairingManager
+    private val pairingManager: PairingCoordinator
 ) : ViewModel() {
 
     sealed interface State {

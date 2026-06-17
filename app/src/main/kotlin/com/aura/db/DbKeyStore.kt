@@ -15,7 +15,7 @@ import javax.inject.Singleton
  * EncryptedSharedPreferences whose master key lives in the Android Keystore.
  */
 @Singleton
-class DbKeyManager @Inject constructor(
+class DbKeyStore @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val prefs: SharedPreferences by lazy {

@@ -3,26 +3,20 @@ package com.aura.pairing
 import android.util.Base64
 import com.aura.crypto.HybridCiphertext
 import com.aura.crypto.HybridKem
-import com.aura.crypto.HybridPublicKey
-import com.aura.crypto.HybridSigner
-import com.aura.crypto.HybridVerifyKey
-import com.aura.crypto.Hkdf
-import com.aura.crypto.NodeIdentity
 import com.aura.crypto.PrekeyManager
 import com.aura.crypto.RatchetManager
-import com.aura.crypto.hexToBytes
 import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.db.ContactEntity
+import com.aura.db.ContactEraser
 import com.aura.db.PairState
-import com.aura.identity.IdentityManager
+import com.aura.identity.IdentityStore
 import com.aura.network.RendezvousClient
 import com.aura.notify.Notifier
 import com.aura.settings.AuroraSettings
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import org.json.JSONObject
-import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,15 +43,15 @@ import javax.inject.Singleton
  *     different root, so the codes won't match and entry fails.
  */
 @Singleton
-class PairingManager @Inject constructor(
-    private val identityManager: IdentityManager,
+class PairingCoordinator @Inject constructor(
+    private val identityManager: IdentityStore,
     private val kem: HybridKem,
-    private val signer: HybridSigner,
-    private val hkdf: Hkdf,
+    private val pairingCrypto: PairingCrypto,
+    private val pairingSignal: PairingSignal,
     private val ratchet: RatchetManager,
     private val prekeys: PrekeyManager,
     private val contactDao: ContactDao,
-    private val eraser: com.aura.db.ContactEraser,
+    private val eraser: ContactEraser,
     private val rendezvousClient: RendezvousClient,
     private val settings: AuroraSettings,
     private val notifier: Notifier
@@ -74,6 +68,7 @@ class PairingManager @Inject constructor(
         data class Declined(override val nodeIdHex: String) : PairEvent  // peer rejected our request
         data class Failed(override val nodeIdHex: String) : PairEvent    // verification gave up (blocked)
         data class ContactRemoved(override val nodeIdHex: String, val name: String) : PairEvent  // peer deleted us
+        data class WeakPairing(override val nodeIdHex: String) : PairEvent  // FS prekeys advertised but unavailable → legacy fallback
     }
 
     private val _events = MutableSharedFlow<PairEvent>(extraBufferCapacity = 8)
@@ -107,6 +102,15 @@ class PairingManager @Inject constructor(
         // identity-only encapsulation. Either way we store the finished 32-byte pairing
         // *root* (not the raw KEM secret), so Accept just seeds the ratchet from it.
         val fs = tryFsEncapsulate(payload, myNodeIdHex)
+        // Downgrade guard: the peer advertised forward-secret prekeys (pkVersion ≥ 1) but we
+        // got no usable bundle. That's either a transient server issue or an active attacker
+        // suppressing the bundle to strip forward secrecy. We still pair (legacy is mutually
+        // authenticated and SAS/MITM-protected) but WARN the user that this pairing is not
+        // forward-secret, rather than downgrading silently.
+        if (fs == null && payload.pkVersion >= 1) {
+            android.util.Log.w("AuroraPairing", "FS prekeys advertised but unavailable — pairing WITHOUT forward secrecy (possible downgrade)")
+            _events.tryEmit(PairEvent.WeakPairing(payload.nodeIdHex))
+        }
         val ctB64: String
         val rootB64: String
         if (fs != null) {
@@ -115,7 +119,7 @@ class PairingManager @Inject constructor(
         } else {
             val kemResult = kem.encapsulate(payload.kemPublicKey).getOrThrow()
             ctB64 = Base64.encodeToString(kemResult.ciphertext.toBytes(), Base64.NO_WRAP)
-            val root = legacyRoot(kemResult.sharedSecret)
+            val root = pairingCrypto.legacyRoot(kemResult.sharedSecret)
             kemResult.sharedSecret.fill(0)
             rootB64 = Base64.encodeToString(root, Base64.NO_WRAP)
             root.fill(0)
@@ -142,7 +146,7 @@ class PairingManager @Inject constructor(
             "aura-pairreq-v2|$myNodeIdHex|${payload.nodeIdHex}|$ctB64|${fs.ctSpk}|${fs.ctOpk ?: "-"}|${fs.spkId}|${fs.opkId ?: "-"}"
         else
             "aura-pairreq-v1|$myNodeIdHex|${payload.nodeIdHex}|$ctB64"
-        val signature = signer.signEd25519Only(signedPart.toByteArray(), identity.privatePart.signingPrivateKey).getOrThrow()
+        val signature = pairingSignal.sign(signedPart, identity) ?: error("pairreq signature failed")
         val message = JSONObject()
             .put("type", "pairreq")
             .put("from", myNodeIdHex)
@@ -161,7 +165,7 @@ class PairingManager @Inject constructor(
                 }
             }
             .toString()
-        rendezvousClient.postSignal(settings.serverAddress.value, payload.nodeIdHex, message)
+        pairingSignal.post(payload.nodeIdHex, message)
         Unit
     }
 
@@ -170,7 +174,7 @@ class PairingManager @Inject constructor(
         val identity = identityManager.getOrCreate()
         contactDao.byNodeId(contactNodeIdHex) ?: return@runCatching Unit
         eraser.wipe(contactNodeIdHex)
-        sendSimple("paircancel", identity.nodeId.toHex(), contactNodeIdHex, identity)
+        pairingSignal.sendSimple("paircancel", identity.nodeId.toHex(), contactNodeIdHex, identity)
     }
 
     /** Scanner side: the peer accepted — learn their Dilithium key and seed the root. */
@@ -183,9 +187,9 @@ class PairingManager @Inject constructor(
         if (contact.pairState != PairState.REQUESTED) return@runCatching Unit
 
         val dilithiumB64 = json.optString("dilithium")
-        require(nodeIdMatches(from, contact.kemPubB64, contact.ed25519PubB64, dilithiumB64)) { "accepter nodeId mismatch" }
+        require(pairingCrypto.nodeIdMatches(from, contact.kemPubB64, contact.ed25519PubB64, dilithiumB64)) { "accepter nodeId mismatch" }
         val signedPart = "aura-pairaccept-v1|$from|$myNodeIdHex|$dilithiumB64"
-        require(verifyEd(signedPart, contact.ed25519PubB64, json.optString("sig"))) { "pairaccept signature failed" }
+        require(pairingSignal.verifyEd(signedPart, contact.ed25519PubB64, json.optString("sig"))) { "pairaccept signature failed" }
 
         // sharedSecretB64 already holds the finished pairing root (derived at scan time,
         // forward-secret when prekeys were used). Seed the ratchet straight from it.
@@ -214,7 +218,7 @@ class PairingManager @Inject constructor(
         val ed25519B64 = json.optString("ed25519")
         val dilithiumB64 = json.optString("dilithium")
         val ctB64 = json.optString("ct")
-        require(nodeIdMatches(from, kemB64, ed25519B64, dilithiumB64)) { "requester nodeId mismatch" }
+        require(pairingCrypto.nodeIdMatches(from, kemB64, ed25519B64, dilithiumB64)) { "requester nodeId mismatch" }
 
         val spkId = json.optString("spkId").ifEmpty { null }
         val ctSpk = json.optString("ctSpk").ifEmpty { null }
@@ -226,12 +230,12 @@ class PairingManager @Inject constructor(
             // prekeys and fold identity + signed prekey (+ one-time prekey) into the same
             // root the scanner derived. The one-time prekey is destroyed on consume.
             val signedPart = "aura-pairreq-v2|$from|$myNodeIdHex|$ctB64|$ctSpk|${ctOpk ?: "-"}|$spkId|${opkId ?: "-"}"
-            require(verifyEd(signedPart, ed25519B64, json.optString("sig"))) { "pair-req(v2) signature failed" }
+            require(pairingSignal.verifyEd(signedPart, ed25519B64, json.optString("sig"))) { "pair-req(v2) signature failed" }
             val consumed = prekeys.consume(spkId, opkId) ?: error("unknown signed prekey")
             if (consumed.opkMissing) {
                 // The one-time prekey was already used (stale / reused code) — fail closed
                 // and ask the scanner to regenerate, rather than pair on a mismatched root.
-                sendSimple("pairreject", myNodeIdHex, from, identity)
+                pairingSignal.sendSimple("pairreject", myNodeIdHex, from, identity)
                 return@runCatching Unit
             }
             val ctIKb  = Base64.decode(ctB64, Base64.NO_WRAP)
@@ -242,7 +246,7 @@ class PairingManager @Inject constructor(
             val opkPriv = consumed.opkPriv   // local val: opkPriv is a cross-module nullable, can't smart-cast in place
             val sOPK = if (ctOpkb != null && opkPriv != null)
                 kem.decapsulate(HybridCiphertext.fromBytes(ctOpkb), opkPriv).getOrThrow() else null
-            val root = fsRoot(
+            val root = pairingCrypto.fsRoot(
                 initiatorHex = from, responderHex = myNodeIdHex,
                 sIK = sIK, sSPK = sSPK, sOPK = sOPK,
                 spkId = spkId, opkId = opkId,
@@ -254,10 +258,10 @@ class PairingManager @Inject constructor(
         } else {
             // Legacy identity-only request.
             val signedPart = "aura-pairreq-v1|$from|$myNodeIdHex|$ctB64"
-            require(verifyEd(signedPart, ed25519B64, json.optString("sig"))) { "pair-req signature failed" }
+            require(pairingSignal.verifyEd(signedPart, ed25519B64, json.optString("sig"))) { "pair-req signature failed" }
             val ciphertext = HybridCiphertext.fromBytes(Base64.decode(ctB64, Base64.NO_WRAP))
             val s = kem.decapsulate(ciphertext, identity.privatePart.kemPrivateKey).getOrThrow()
-            val root = legacyRoot(s); s.fill(0)
+            val root = pairingCrypto.legacyRoot(s); s.fill(0)
             Base64.encodeToString(root, Base64.NO_WRAP).also { root.fill(0) }
         }
 
@@ -296,9 +300,9 @@ class PairingManager @Inject constructor(
 
         val dilithiumB64 = Base64.encodeToString(identity.publicPart.signingPublicKey.dilithiumPublicKey, Base64.NO_WRAP)
         val signedPart = "aura-pairaccept-v1|$myNodeIdHex|$contactNodeIdHex|$dilithiumB64"
-        val sig = signer.signEd25519Only(signedPart.toByteArray(), identity.privatePart.signingPrivateKey).getOrThrow()
-        rendezvousClient.postSignal(
-            settings.serverAddress.value, contactNodeIdHex,
+        val sig = pairingSignal.sign(signedPart, identity) ?: error("pairaccept signature failed")
+        pairingSignal.post(
+            contactNodeIdHex,
             JSONObject().put("type", "pairaccept").put("from", myNodeIdHex).put("to", contactNodeIdHex)
                 .put("dilithium", dilithiumB64).put("sig", Base64.encodeToString(sig, Base64.NO_WRAP)).toString()
         )
@@ -316,7 +320,7 @@ class PairingManager @Inject constructor(
     suspend fun deleteContact(contactNodeIdHex: String): Result<Unit> = runCatching {
         val identity = identityManager.getOrCreate()
         contactDao.byNodeId(contactNodeIdHex) ?: return@runCatching Unit
-        runCatching { sendSimple("contactremove", identity.nodeId.toHex(), contactNodeIdHex, identity) }
+        runCatching { pairingSignal.sendSimple("contactremove", identity.nodeId.toHex(), contactNodeIdHex, identity) }
         eraser.wipe(contactNodeIdHex)
         Unit
     }
@@ -327,7 +331,7 @@ class PairingManager @Inject constructor(
         val from = json.optString("from")
         require(json.optString("to") == myNodeIdHex) { "contactremove addressed elsewhere" }
         val contact = contactDao.byNodeId(from) ?: return@runCatching Unit
-        if (!verifyEd("aura-contactremove-v1|$from|$myNodeIdHex", contact.ed25519PubB64, json.optString("sig"))) {
+        if (!pairingSignal.verifyEd("aura-contactremove-v1|$from|$myNodeIdHex", contact.ed25519PubB64, json.optString("sig"))) {
             return@runCatching Unit
         }
         val name = contact.displayName
@@ -341,7 +345,7 @@ class PairingManager @Inject constructor(
     suspend fun rejectIncoming(contactNodeIdHex: String, block: Boolean): Result<Unit> = runCatching {
         val identity = identityManager.getOrCreate()
         contactDao.byNodeId(contactNodeIdHex) ?: return@runCatching Unit
-        sendSimple("pairreject", identity.nodeId.toHex(), contactNodeIdHex, identity)
+        pairingSignal.sendSimple("pairreject", identity.nodeId.toHex(), contactNodeIdHex, identity)
         eraser.wipe(contactNodeIdHex)
         if (block) settings.blockNode(contactNodeIdHex)
         notifier.cancelContactRequest()
@@ -355,7 +359,7 @@ class PairingManager @Inject constructor(
         require(json.optString("to") == myNodeIdHex) { "paircancel addressed elsewhere" }
         val contact = contactDao.byNodeId(from) ?: return@runCatching Unit
         if (contact.pairState != PairState.INCOMING) return@runCatching Unit
-        if (!verifyEd("aura-paircancel-v1|$from|$myNodeIdHex", contact.ed25519PubB64, json.optString("sig"))) {
+        if (!pairingSignal.verifyEd("aura-paircancel-v1|$from|$myNodeIdHex", contact.ed25519PubB64, json.optString("sig"))) {
             return@runCatching Unit
         }
         eraser.wipe(from)
@@ -370,7 +374,7 @@ class PairingManager @Inject constructor(
         require(json.optString("to") == myNodeIdHex) { "pairreject addressed elsewhere" }
         val contact = contactDao.byNodeId(from) ?: return@runCatching Unit
         if (contact.pairState != PairState.REQUESTED) return@runCatching Unit
-        if (!verifyEd("aura-pairreject-v1|$from|$myNodeIdHex", contact.ed25519PubB64, json.optString("sig"))) {
+        if (!pairingSignal.verifyEd("aura-pairreject-v1|$from|$myNodeIdHex", contact.ed25519PubB64, json.optString("sig"))) {
             return@runCatching Unit
         }
         eraser.wipe(from)
@@ -399,7 +403,7 @@ class PairingManager @Inject constructor(
 
         // The peer shows the code bound to THEIR identity; we compute the same locally.
         val expected = ratchet.sasCodeFor(contactNodeIdHex, contactNodeIdHex) ?: return@runCatching false
-        if (code.trim() != expected) {
+        if (!pairingCrypto.sasEquals(code.trim(), expected)) {
             contactDao.incVerifyAttempts(contactNodeIdHex)
             val attempts = contactDao.byNodeId(contactNodeIdHex)?.verifyAttempts ?: 0
             if (attempts >= MAX_VERIFY_ATTEMPTS) {
@@ -416,7 +420,7 @@ class PairingManager @Inject constructor(
         } else {
             contactDao.setVerify(contactNodeIdHex, iv = true, tv = false, state = PairState.VERIFY)
         }
-        sendSimple("pairverify", myNodeIdHex, contactNodeIdHex, identity)
+        pairingSignal.sendSimple("pairverify", myNodeIdHex, contactNodeIdHex, identity)
         true
     }
 
@@ -427,7 +431,7 @@ class PairingManager @Inject constructor(
         require(json.optString("to") == myNodeIdHex) { "pairverify addressed elsewhere" }
         val contact = contactDao.byNodeId(from) ?: return@runCatching Unit
         if (contact.pairState != PairState.VERIFY) return@runCatching Unit
-        if (!verifyEd("aura-pairverify-v1|$from|$myNodeIdHex", contact.ed25519PubB64, json.optString("sig"))) {
+        if (!pairingSignal.verifyEd("aura-pairverify-v1|$from|$myNodeIdHex", contact.ed25519PubB64, json.optString("sig"))) {
             return@runCatching Unit
         }
         if (contact.iVerified) {
@@ -449,10 +453,6 @@ class PairingManager @Inject constructor(
         _incomingPaired.tryEmit(nodeIdHex)
     }
 
-    /** Legacy (identity-only) ratchet root from the single KEM shared secret. */
-    private fun legacyRoot(s: ByteArray): ByteArray =
-        hkdf.derive(ikm = s, info = "aura-pair-root-v2".toByteArray(), outputLen = 32)
-
     /** A scanner-side forward-secret encapsulation result, ready to post + store. */
     private class FsEncap(
         val rootB64: String,
@@ -462,38 +462,6 @@ class PairingManager @Inject constructor(
         val spkId: String,
         val opkId: String?
     )
-
-    /**
-     * Forward-secret root, mixing the identity-key secret with the signed-prekey and
-     * (optional) one-time-prekey secrets. Both peers compute this identically: the
-     * scanner from the secrets it encapsulated, the responder from the secrets it
-     * decapsulated. The transcript (node ids, prekey ids, and hashes of every
-     * ciphertext) is bound into the HKDF info so a swapped ciphertext yields a
-     * different root — caught by the mutual SAS. [responderKyberPub] is the responder's
-     * identity Kyber public key (the QR key the scanner saw / the responder's own key).
-     */
-    private fun fsRoot(
-        initiatorHex: String,
-        responderHex: String,
-        sIK: ByteArray,
-        sSPK: ByteArray,
-        sOPK: ByteArray?,
-        spkId: String,
-        opkId: String?,
-        ctIK: ByteArray,
-        ctSpk: ByteArray,
-        ctOpk: ByteArray?,
-        responderKyberPub: ByteArray
-    ): ByteArray {
-        val ikm = sIK + sSPK + (sOPK ?: ByteArray(0))
-        val header = ("aura-pair-root-v3|$initiatorHex|$responderHex|$spkId|" +
-            "${opkId ?: "-"}|${if (sOPK != null) "1" else "0"}|").toByteArray()
-        val info = header + hkdf.sha3_256(ctIK) + hkdf.sha3_256(ctSpk) +
-            (ctOpk?.let { hkdf.sha3_256(it) } ?: ByteArray(0))
-        val root = hkdf.derive(ikm = ikm, salt = hkdf.sha3_256(responderKyberPub), info = info, outputLen = 32)
-        ikm.fill(0)
-        return root
-    }
 
     /**
      * Scanner side: if the peer advertises prekeys ([QrPayload.pkVersion] ≥ 1), fetch
@@ -511,7 +479,7 @@ class PairingManager @Inject constructor(
         val ed = payload.ed25519Pub
         val spkPubB64 = Base64.encodeToString(bundle.spkPub.toBytes(), Base64.NO_WRAP)
         val spkMsg = PrekeyManager.prekeyMessage(payload.nodeIdHex, PrekeyManager.KIND_SPK, bundle.spkId, spkPubB64)
-        if (!verifyEdBytes(spkMsg, ed, bundle.spkSig)) return null
+        if (!pairingSignal.verifyEdBytes(spkMsg, ed, bundle.spkSig)) return null
 
         // One-time prekey is optional; drop it (rather than abort) if its signature fails.
         var opkPub = bundle.opkPub
@@ -519,7 +487,7 @@ class PairingManager @Inject constructor(
         if (opkPub != null && opkId != null && bundle.opkSig != null) {
             val opkPubB64 = Base64.encodeToString(opkPub.toBytes(), Base64.NO_WRAP)
             val opkMsg = PrekeyManager.prekeyMessage(payload.nodeIdHex, PrekeyManager.KIND_OPK, opkId, opkPubB64)
-            if (!verifyEdBytes(opkMsg, ed, bundle.opkSig)) { opkPub = null; opkId = null }
+            if (!pairingSignal.verifyEdBytes(opkMsg, ed, bundle.opkSig)) { opkPub = null; opkId = null }
         } else { opkPub = null; opkId = null }
 
         val rIK  = kem.encapsulate(payload.kemPublicKey).getOrThrow()
@@ -529,7 +497,7 @@ class PairingManager @Inject constructor(
         val ctIK  = rIK.ciphertext.toBytes()
         val ctSpk = rSPK.ciphertext.toBytes()
         val ctOpk = rOPK?.ciphertext?.toBytes()
-        val root = fsRoot(
+        val root = pairingCrypto.fsRoot(
             initiatorHex = myNodeIdHex, responderHex = payload.nodeIdHex,
             sIK = rIK.sharedSecret, sSPK = rSPK.sharedSecret, sOPK = rOPK?.sharedSecret,
             spkId = bundle.spkId, opkId = opkId,
@@ -545,36 +513,6 @@ class PairingManager @Inject constructor(
             spkId = bundle.spkId,
             opkId = opkId
         ).also { root.fill(0) }
-    }
-
-    private suspend fun verifyEdBytes(message: ByteArray, ed25519Pub: ByteArray, sig: ByteArray): Boolean =
-        signer.verifyEd25519Only(message, sig, ed25519Pub).getOrElse { false }
-
-    /** True iff nodeId == SHA3-256(kemPub ‖ signPub) for the supplied keys. */
-    private fun nodeIdMatches(nodeIdHex: String, kemB64: String, ed25519B64: String, dilithiumB64: String): Boolean = try {
-        val kemPub = HybridPublicKey.fromBytes(Base64.decode(kemB64, Base64.NO_WRAP))
-        val signPub = HybridVerifyKey(Base64.decode(dilithiumB64, Base64.NO_WRAP), Base64.decode(ed25519B64, Base64.NO_WRAP))
-        MessageDigest.isEqual(hkdf.sha3_256(kemPub.toBytes() + signPub.toBytes()), hexToBytes(nodeIdHex))
-    } catch (e: Exception) {
-        false
-    }
-
-    private suspend fun verifyEd(signedPart: String, ed25519B64: String, sigB64: String): Boolean = try {
-        val ed = Base64.decode(ed25519B64, Base64.NO_WRAP)
-        val sig = Base64.decode(sigB64, Base64.NO_WRAP)
-        signer.verifyEd25519Only(signedPart.toByteArray(), sig, ed).getOrElse { false }
-    } catch (e: Exception) {
-        false
-    }
-
-    private suspend fun sendSimple(type: String, fromNodeIdHex: String, toNodeIdHex: String, identity: NodeIdentity) {
-        val signedPart = "aura-$type-v1|$fromNodeIdHex|$toNodeIdHex"
-        val sig = signer.signEd25519Only(signedPart.toByteArray(), identity.privatePart.signingPrivateKey).getOrNull() ?: return
-        rendezvousClient.postSignal(
-            settings.serverAddress.value, toNodeIdHex,
-            JSONObject().put("type", type).put("from", fromNodeIdHex).put("to", toNodeIdHex)
-                .put("sig", Base64.encodeToString(sig, Base64.NO_WRAP)).toString()
-        )
     }
 
     private companion object {

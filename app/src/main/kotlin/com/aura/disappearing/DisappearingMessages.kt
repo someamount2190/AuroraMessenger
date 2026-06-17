@@ -3,10 +3,12 @@ package com.aura.disappearing
 import com.aura.db.ContactDao
 import com.aura.db.MessageDao
 import com.aura.db.MessageEntity
-import com.aura.media.MediaStore
+import com.aura.media.EncryptedMediaStore
 import com.aura.settings.DisappearingTimer
 import com.aura.transport.MessageSender
 import com.aura.transport.TcpMessageServer
+import com.aura.di.IoDispatcher
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,14 +29,15 @@ import javax.inject.Singleton
  * default for new messages.
  */
 @Singleton
-class DisappearingManager @Inject constructor(
+class DisappearingMessages @Inject constructor(
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
-    private val mediaStore: MediaStore,
+    private val mediaStore: EncryptedMediaStore,
     private val messageSender: MessageSender,
-    private val tcpServer: TcpMessageServer
+    private val tcpServer: TcpMessageServer,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(ioDispatcher)
     private var sweepJob: Job? = null
 
     fun start() {

@@ -14,6 +14,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
+import com.aura.notify.Notifier
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,9 +39,9 @@ import kotlin.math.abs
  * still excluded from screenshots/recording, matching the in-app call screen.
  */
 @Singleton
-class CallOverlayManager @Inject constructor(
+class CallOverlay @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val callManager: CallManager
+    private val callManager: CallController
 ) {
     private val wm = context.getSystemService(WindowManager::class.java)
     private val main = Handler(Looper.getMainLooper())
@@ -60,7 +61,7 @@ class CallOverlayManager @Inject constructor(
     fun show() = main.post {
         if (root != null || !canShow()) return@post
         val info = callManager.call.value
-        if (info.state == CallManager.CallState.IDLE || info.state == CallManager.CallState.ENDED) return@post
+        if (info.state == CallController.CallState.IDLE || info.state == CallController.CallState.ENDED) return@post
 
         val view = buildView(info.isVideo, info.peerName)
         val params = WindowManager.LayoutParams(
@@ -86,7 +87,7 @@ class CallOverlayManager @Inject constructor(
         // Tear down if the call ends while we're floating.
         s.launch {
             callManager.call.collect {
-                if (it.state == CallManager.CallState.ENDED || it.state == CallManager.CallState.IDLE) hide()
+                if (it.state == CallController.CallState.ENDED || it.state == CallController.CallState.IDLE) hide()
             }
         }
     }
@@ -164,7 +165,7 @@ class CallOverlayManager @Inject constructor(
     private fun returnToCall() {
         callManager.expand()
         val intent = Intent(context, com.aura.MainActivity::class.java).apply {
-            action = com.aura.notify.Notifier.ACTION_OPEN_CALL
+            action = Notifier.ACTION_OPEN_CALL
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
         runCatching { context.startActivity(intent) }

@@ -1,7 +1,7 @@
 package com.aura.db
 
 import com.aura.crypto.RatchetManager
-import com.aura.media.MediaStore
+import com.aura.media.EncryptedMediaStore
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,7 +18,7 @@ class ContactEraser @Inject constructor(
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val ratchet: RatchetManager,
-    private val mediaStore: MediaStore
+    private val mediaStore: EncryptedMediaStore
 ) {
     suspend fun wipe(nodeIdHex: String) {
         // 1. Encrypted media files on disk.

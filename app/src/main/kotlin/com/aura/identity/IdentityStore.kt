@@ -17,7 +17,9 @@ import com.aura.crypto.NodeIdentityGenerator
 import com.aura.crypto.NodePrivateIdentity
 import com.aura.crypto.NodePublicIdentity
 import com.aura.crypto.toHex
+import com.aura.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -34,11 +36,12 @@ import javax.inject.Singleton
  * Keystore — the standard pattern for large key material.
  */
 @Singleton
-class IdentityManager @Inject constructor(
+class IdentityStore @Inject constructor(
     @ApplicationContext private val context: Context,
     private val kem:    HybridKem,
     private val signer: HybridSigner,
-    private val hkdf:   Hkdf
+    private val hkdf:   Hkdf,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private val mutex = Mutex()
     @Volatile private var cached: NodeIdentity? = null
@@ -58,7 +61,7 @@ class IdentityManager @Inject constructor(
 
     /** Load the persisted identity, generating it on first launch. Thread-safe. */
     suspend fun getOrCreate(): NodeIdentity = cached ?: mutex.withLock {
-        cached ?: withContext(Dispatchers.IO) {
+        cached ?: withContext(ioDispatcher) {
             load() ?: generateAndPersist()
         }.also { cached = it }
     }
@@ -68,7 +71,7 @@ class IdentityManager @Inject constructor(
 
     /** Wipe the identity (Settings → Clear all data). The next launch regenerates. */
     suspend fun clear() = mutex.withLock {
-        withContext(Dispatchers.IO) { prefs.edit().clear().commit() }
+        withContext(ioDispatcher) { prefs.edit().clear().commit() }
         cached = null
     }
 
@@ -82,7 +85,7 @@ class IdentityManager @Inject constructor(
 
     /** Overwrite the stored identity from a restored backup (replaces any current one). */
     suspend fun restore(identity: NodeIdentity) = mutex.withLock {
-        withContext(Dispatchers.IO) { persist(identity) }
+        withContext(ioDispatcher) { persist(identity) }
         cached = identity
     }
 

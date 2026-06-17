@@ -27,6 +27,11 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     kotlinOptions { jvmTarget = "17" }
 }
 
+// Surface println output from demo tests (CryptoStackDemo) in the console.
+tasks.withType<Test>().configureEach {
+    testLogging { showStandardStreams = true }
+}
+
 dependencies {
     // Exposed to consumers (api) so the app gets them transitively.
     api("org.openquantumsafe:liboqs-java:0.3.0")
@@ -34,6 +39,16 @@ dependencies {
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
     // org.json is part of the Android platform at runtime, so compile against it only.
     compileOnly("org.json:json:20240303")
+
+    // ── Tests ────────────────────────────────────────────────────────────────
+    // T1 (pure-JVM, no native liboqs): Hkdf, SymmetricCipher, RatchetManager, utils.
+    // T2 (native liboqs required): HybridKem/HybridSigner/NodeIdentity/PrekeyManager —
+    // those tests are tagged and skipped unless the native lib is on java.library.path.
+    testImplementation(kotlin("test-junit"))
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
+    // Present at compile-time only for main; provide it on the test runtime classpath
+    // so any class that touches org.json can load during tests.
+    testImplementation("org.json:json:20240303")
 }
 
 publishing {

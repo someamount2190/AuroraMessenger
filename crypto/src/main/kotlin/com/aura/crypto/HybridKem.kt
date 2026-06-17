@@ -1,5 +1,6 @@
 package com.aura.crypto
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.bouncycastle.crypto.agreement.X25519Agreement
@@ -15,12 +16,15 @@ import java.security.SecureRandom
  *
  * Ported from ShadowMesh core/crypto.
  */
-class HybridKem(private val hkdf: Hkdf) {
+class HybridKem(
+    private val hkdf: Hkdf,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
 
     private val rng = SecureRandom()
 
     suspend fun generateKyberKeyPair(): CryptoResult<KyberKeyPair> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 KeyEncapsulation(KYBER_ALGORITHM).use { kem ->
                     val pubKey = kem.generate_keypair()
@@ -33,7 +37,7 @@ class HybridKem(private val hkdf: Hkdf) {
         }
 
     suspend fun generateX25519KeyPair(): CryptoResult<X25519KeyPair> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 val privParams = X25519PrivateKeyParameters(rng)
                 val pubParams  = privParams.generatePublicKey()
@@ -42,7 +46,7 @@ class HybridKem(private val hkdf: Hkdf) {
         }
 
     suspend fun generateKeyPair(): CryptoResult<HybridFullKeyPair> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 val kyberKp  = generateKyberKeyPair().getOrThrow()
                 val x25519Kp = generateX25519KeyPair().getOrThrow()
@@ -54,7 +58,7 @@ class HybridKem(private val hkdf: Hkdf) {
         }
 
     suspend fun encapsulate(recipientPublicKey: HybridPublicKey): CryptoResult<HybridKemResult> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 val kyberSharedSs: ByteArray
                 val kyberCiphertext: ByteArray
@@ -102,7 +106,7 @@ class HybridKem(private val hkdf: Hkdf) {
         ciphertext:       HybridCiphertext,
         recipientPrivKey: HybridPrivateKey
     ): CryptoResult<ByteArray> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 var kyberSs:     ByteArray? = null
                 var x25519Ss:    ByteArray? = null

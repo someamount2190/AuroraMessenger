@@ -1,13 +1,13 @@
 package com.aura
 
-import com.aura.call.CallManager
-import com.aura.disappearing.DisappearingManager
+import com.aura.call.CallController
+import com.aura.disappearing.DisappearingMessages
 import com.aura.media.MediaTransfer
 import com.aura.network.SyncEngine
-import com.aura.reaction.ReactionManager
+import com.aura.reaction.Reactions
 import com.aura.server.RendezvousServerController
 import com.aura.settings.AuroraSettings
-import com.aura.share.ShareShortcutManager
+import com.aura.share.ShareShortcuts
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,10 +30,10 @@ class AppWiring @Inject constructor(
     private val settings: AuroraSettings,
     private val serverController: RendezvousServerController,
     private val mediaTransfer: MediaTransfer,
-    private val disappearingManager: DisappearingManager,
-    private val reactionManager: ReactionManager,
-    private val callManager: CallManager,
-    private val shareShortcutManager: ShareShortcutManager,
+    private val disappearingManager: DisappearingMessages,
+    private val reactionManager: Reactions,
+    private val callManager: CallController,
+    private val shareShortcutManager: ShareShortcuts,
     private val syncEngine: SyncEngine
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

@@ -2,12 +2,13 @@ package com.aura.security
 
 import android.content.Context
 import com.aura.db.AuroraDatabase
-import com.aura.db.DbKeyManager
-import com.aura.identity.IdentityManager
-import com.aura.media.MediaStore
+import com.aura.db.DbKeyStore
+import com.aura.identity.IdentityStore
+import com.aura.media.EncryptedMediaStore
 import com.aura.settings.AuroraSettings
+import com.aura.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,13 +30,14 @@ import javax.inject.Singleton
 class SecureWipe @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: AuroraDatabase,
-    private val identityManager: IdentityManager,
-    private val dbKeyManager: DbKeyManager,
-    private val mediaStore: MediaStore,
+    private val identityManager: IdentityStore,
+    private val dbKeyManager: DbKeyStore,
+    private val mediaStore: EncryptedMediaStore,
     private val settings: AuroraSettings,
-    private val appLockManager: AppLockManager
+    private val appLockManager: AppLock,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
-    suspend fun wipeEverything() = withContext(Dispatchers.IO) {
+    suspend fun wipeEverything() = withContext(ioDispatcher) {
         // 1. Drop all rows (logical wipe even if the file delete below is blocked).
         runCatching {
             database.contactDao().deleteAll()

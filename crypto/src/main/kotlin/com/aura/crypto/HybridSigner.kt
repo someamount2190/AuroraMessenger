@@ -1,5 +1,6 @@
 package com.aura.crypto
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.bouncycastle.crypto.generators.Ed25519KeyPairGenerator
@@ -29,12 +30,14 @@ import java.security.SecureRandom
  *
  * Ported from ShadowMesh core/crypto.
  */
-class HybridSigner {
+class HybridSigner(
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
 
     // ── Key generation ────────────────────────────────────────────────────
 
     suspend fun generateSigningKeyPair(): CryptoResult<HybridSigningKeyPair> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 val dilithiumPub:  ByteArray
                 val dilithiumPriv: ByteArray
@@ -75,7 +78,7 @@ class HybridSigner {
         message:    ByteArray,
         privateKey: HybridSigningKey
     ): CryptoResult<ByteArray> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 val dilithiumSig: ByteArray
                 Signature(DILITHIUM_ALGORITHM).use { sig ->
@@ -99,7 +102,7 @@ class HybridSigner {
         signature: ByteArray,
         publicKey: HybridVerifyKey
     ): CryptoResult<Boolean> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 val (dilithiumSig, ed25519Sig) = deserializeHybridSig(signature)
 
@@ -131,7 +134,7 @@ class HybridSigner {
         message:    ByteArray,
         privateKey: HybridSigningKey
     ): CryptoResult<ByteArray> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 ed25519Sign(message, privateKey.ed25519PrivateKey)
             }
@@ -146,7 +149,7 @@ class HybridSigner {
         signature: ByteArray,
         publicKey: ByteArray   // raw 32-byte Ed25519 public key
     ): CryptoResult<Boolean> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             cryptoRunCatching {
                 require(signature.size == ED25519_SIG_BYTES) {
                     "Ed25519 signature must be $ED25519_SIG_BYTES bytes, got ${signature.size}"

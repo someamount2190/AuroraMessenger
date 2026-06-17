@@ -39,7 +39,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aura.R
-import com.aura.identity.IdentityManager
+import com.aura.identity.IdentityStore
 import com.aura.settings.AuroraSettings
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,7 +50,7 @@ import javax.inject.Inject
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
     private val settings: AuroraSettings,
-    private val identityManager: IdentityManager
+    private val identityManager: IdentityStore
 ) : ViewModel() {
 
     private val _ready = MutableStateFlow(false)

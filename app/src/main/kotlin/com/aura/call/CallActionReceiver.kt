@@ -14,7 +14,7 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class CallActionReceiver : BroadcastReceiver() {
 
-    @Inject lateinit var callManager: CallManager
+    @Inject lateinit var callManager: CallController
 
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {

@@ -35,18 +35,19 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.lifecycle.viewModelScope
-import com.aura.call.CallManager
-import com.aura.disappearing.DisappearingManager
-import com.aura.identity.IdentityManager
+import com.aura.call.CallController
+import com.aura.call.CallController.CallState
+import com.aura.disappearing.DisappearingMessages
+import com.aura.identity.IdentityStore
 import com.aura.media.MediaTransfer
 import com.aura.network.SyncEngine
-import com.aura.pairing.PairingManager
-import com.aura.reaction.ReactionManager
-import com.aura.security.AppLockManager
+import com.aura.pairing.PairingCoordinator
+import com.aura.reaction.Reactions
+import com.aura.security.AppLock
 import com.aura.server.RendezvousServerController
 import com.aura.settings.AuroraSettings
 import com.aura.share.ShareIntentBus
-import com.aura.share.ShareShortcutManager
+import com.aura.share.ShareShortcuts
 import com.aura.ui.share.ShareScreen
 import com.aura.ui.call.CallBubble
 import com.aura.ui.call.CallScreen
@@ -87,11 +88,11 @@ object Routes {
 class AuroraAppViewModel @Inject constructor(
     private val settings: AuroraSettings,
     private val appWiring: com.aura.AppWiring,
-    val callManager: CallManager,
-    val appLockManager: AppLockManager,
-    val pairingManager: PairingManager,
+    val callManager: CallController,
+    val appLockManager: AppLock,
+    val pairingManager: PairingCoordinator,
     val shareIntentBus: ShareIntentBus,
-    val identityManager: IdentityManager
+    val identityManager: IdentityStore
 ) : ViewModel() {
     private val _startDestination = MutableStateFlow(
         if (settings.onboardingDone) Routes.HOME else Routes.ONBOARDING
@@ -128,10 +129,10 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
     // Calls bypass the app lock: while locked, an incoming or ongoing call shows ONLY
     // the call screen (never the rest of the app), then falls back to the lock screen
     // the instant the call ends — so answering doesn't require entering the PIN first.
-    val callActive = callState.state == com.aura.call.CallManager.CallState.INCOMING ||
-        callState.state == com.aura.call.CallManager.CallState.OUTGOING ||
-        callState.state == com.aura.call.CallManager.CallState.CONNECTING ||
-        callState.state == com.aura.call.CallManager.CallState.CONNECTED
+    val callActive = callState.state == CallState.INCOMING ||
+        callState.state == CallState.OUTGOING ||
+        callState.state == CallState.CONNECTING ||
+        callState.state == CallState.CONNECTED
     if (locked) {
         if (callActive) CallScreen(onCallEnded = {}) else LockScreen()
         return
@@ -148,11 +149,12 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
     LaunchedEffect(Unit) {
         viewModel.pairingManager.events.collect { ev ->
             val msg = when (ev) {
-                is com.aura.pairing.PairingManager.PairEvent.Success  -> "Contact added"
-                is com.aura.pairing.PairingManager.PairEvent.Accepted -> "Accepted — verify the codes to start chatting"
-                is com.aura.pairing.PairingManager.PairEvent.Declined -> "Your request was declined"
-                is com.aura.pairing.PairingManager.PairEvent.Failed   -> "Verification failed — contact removed"
-                is com.aura.pairing.PairingManager.PairEvent.ContactRemoved -> "${ev.name} removed you as a contact"
+                is com.aura.pairing.PairingCoordinator.PairEvent.Success  -> "Contact added"
+                is com.aura.pairing.PairingCoordinator.PairEvent.Accepted -> "Accepted — verify the codes to start chatting"
+                is com.aura.pairing.PairingCoordinator.PairEvent.Declined -> "Your request was declined"
+                is com.aura.pairing.PairingCoordinator.PairEvent.Failed   -> "Verification failed — contact removed"
+                is com.aura.pairing.PairingCoordinator.PairEvent.ContactRemoved -> "${ev.name} removed you as a contact"
+                is com.aura.pairing.PairingCoordinator.PairEvent.WeakPairing -> "Paired, but without forward secrecy — the contact's keys were unavailable"
             }
             android.widget.Toast.makeText(appContext, msg, android.widget.Toast.LENGTH_SHORT).show()
         }
@@ -193,10 +195,10 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
     // unless the user minimized it — then the floating bubble represents the call.
     LaunchedEffect(callState.state, minimized) {
         val s = callState.state
-        val active = s == com.aura.call.CallManager.CallState.INCOMING ||
-            s == com.aura.call.CallManager.CallState.OUTGOING ||
-            s == com.aura.call.CallManager.CallState.CONNECTING ||
-            s == com.aura.call.CallManager.CallState.CONNECTED
+        val active = s == CallState.INCOMING ||
+            s == CallState.OUTGOING ||
+            s == CallState.CONNECTING ||
+            s == CallState.CONNECTED
         if (active && !minimized && navController.currentDestination?.route != Routes.CALL) {
             navController.navigate(Routes.CALL) { launchSingleTop = true }
         }
@@ -211,12 +213,12 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
                     viewModel.markSplashShown()
                     // Cold-start deep links resolved once: a tapped contact shortcut
                     // opens that chat; an inbound share opens the picker; else normal.
+                    val oc = openContact
                     val dest = when {
                         postSplashDestination != Routes.HOME -> postSplashDestination
-                        openContact != null -> {
-                            val id = openContact!!
+                        oc != null -> {
                             viewModel.shareIntentBus.consumeOpenContact()
-                            Routes.conversation(id)
+                            Routes.conversation(oc)
                         }
                         pendingShare != null -> Routes.SHARE
                         else -> postSplashDestination
@@ -291,7 +293,7 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
         }
         composable(Routes.CALL) {
             // Back does not end the call: minimize it and drop to the main menu. The
-            // call keeps running (CallManager is process-scoped) and the floating bubble
+            // call keeps running (CallController is process-scoped) and the floating bubble
             // + ongoing notification take over.
             BackHandler {
                 viewModel.callManager.minimize()

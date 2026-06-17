@@ -8,9 +8,11 @@ import com.aura.db.ContactEntity
 import com.aura.db.MeshPeerDao
 import com.aura.db.MeshPeerEntity
 import com.aura.db.MessageDao
-import com.aura.identity.IdentityManager
+import com.aura.identity.IdentityStore
 import com.aura.network.RendezvousClient
 import com.aura.settings.AuroraSettings
+import com.aura.di.IoDispatcher
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -33,13 +35,14 @@ import javax.inject.Singleton
  */
 @Singleton
 class MessageSender @Inject constructor(
-    private val identityManager: IdentityManager,
+    private val identityManager: IdentityStore,
     private val ratchet: RatchetManager,
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val meshPeerDao: MeshPeerDao,
     private val rendezvousClient: RendezvousClient,
-    private val settings: AuroraSettings
+    private val settings: AuroraSettings,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private val flushMutex = Mutex()
 
@@ -98,9 +101,11 @@ class MessageSender @Inject constructor(
             // otherwise seal now (which advances + discards this send-chain key).
             val sealedB64: String
             val n: Long
-            if (message.sealedB64 != null && message.ratchetN != null) {
-                sealedB64 = message.sealedB64!!
-                n = message.ratchetN!!
+            val existingSealed = message.sealedB64
+            val existingN = message.ratchetN
+            if (existingSealed != null && existingN != null) {
+                sealedB64 = existingSealed
+                n = existingN
             } else {
                 val inner = JSONObject()
                     .put("body", message.body)
@@ -170,7 +175,7 @@ class MessageSender @Inject constructor(
         address: PeerAddress,
         startFrame: JSONObject,
         sealedBytes: ByteArray
-    ): JSONObject? = withContext(Dispatchers.IO) {
+    ): JSONObject? = withContext(ioDispatcher) {
         try {
             val chunkCount = (sealedBytes.size + MEDIA_CHUNK_BYTES - 1) / MEDIA_CHUNK_BYTES
             startFrame.put("chunks", chunkCount)
@@ -197,6 +202,8 @@ class MessageSender @Inject constructor(
                 out.flush()
                 WireFrames.read(socket.getInputStream())   // the ack
             }
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            throw c   // never swallow coroutine cancellation
         } catch (e: Exception) {
             null
         }
@@ -207,7 +214,7 @@ class MessageSender @Inject constructor(
      * relay hop picked from the mesh peer table; on any relay failure, direct.
      */
     suspend fun exchangeFrame(address: PeerAddress, frame: JSONObject): JSONObject? =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             relayExchange(address, frame) ?: directExchange(address, frame)
         }
 
@@ -218,6 +225,8 @@ class MessageSender @Inject constructor(
             WireFrames.write(socket.getOutputStream(), frame)
             WireFrames.read(socket.getInputStream())
         }
+    } catch (c: kotlinx.coroutines.CancellationException) {
+        throw c   // never swallow coroutine cancellation
     } catch (e: Exception) {
         null
     }
@@ -251,6 +260,8 @@ class MessageSender @Inject constructor(
                 if (payload.isEmpty()) return null
                 WireFrames.read(payload.inputStream())
             }
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            throw c   // never swallow coroutine cancellation
         } catch (e: Exception) {
             null  // dummy/unreachable relay → caller falls back to direct
         }

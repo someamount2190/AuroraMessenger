@@ -47,7 +47,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aura.crypto.toHex
-import com.aura.identity.IdentityManager
+import com.aura.identity.IdentityStore
 import com.aura.network.AddressDiscovery
 import com.aura.pairing.QrPayload
 import com.aura.server.RendezvousServerController
@@ -57,7 +57,9 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import dagger.hilt.android.lifecycle.HiltViewModel
+import com.aura.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -69,10 +71,11 @@ import javax.inject.Inject
 class MyCodeViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
-    private val identityManager: IdentityManager,
+    private val identityManager: IdentityStore,
     private val serverController: RendezvousServerController,
     private val addressDiscovery: AddressDiscovery,
-    private val settings: AuroraSettings
+    private val settings: AuroraSettings,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
     /** "Host & show my code" mode: become a rendezvous beacon and embed the address. */
@@ -126,7 +129,7 @@ class MyCodeViewModel @Inject constructor(
 
     fun saveToGallery() {
         val bitmap = _state.value.qrBitmap ?: return
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, "aurora-code-${System.currentTimeMillis()}.png")
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")

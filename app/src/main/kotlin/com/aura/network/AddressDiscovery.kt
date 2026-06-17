@@ -1,6 +1,8 @@
 package com.aura.network
 
+import com.aura.di.IoDispatcher
 import com.aura.server.RendezvousServerController
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -28,7 +30,9 @@ import javax.inject.Singleton
  *    that plainly instead of advertising an address that will never connect.
  */
 @Singleton
-class AddressDiscovery @Inject constructor() {
+class AddressDiscovery @Inject constructor(
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+) {
 
     enum class Reach { LAN_ONLY, INTERNET, UNKNOWN }
 
@@ -46,7 +50,7 @@ class AddressDiscovery @Inject constructor() {
         .build()
 
     /** Build the advertised candidate list for hosting on [port]. */
-    suspend fun discover(port: Int): HostAddresses = withContext(Dispatchers.IO) {
+    suspend fun discover(port: Int): HostAddresses = withContext(ioDispatcher) {
         val lan = RendezvousServerController.localIpAddress()
         val pub = publicIp()
 
@@ -74,7 +78,7 @@ class AddressDiscovery @Inject constructor() {
     }
 
     /** Best-effort public IP via a plain HTTP echo. Null if the network blocks it. */
-    suspend fun publicIp(): String? = withContext(Dispatchers.IO) {
+    suspend fun publicIp(): String? = withContext(ioDispatcher) {
         for (url in PUBLIC_IP_ECHOS) {
             val ip = runCatching {
                 http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
@@ -91,7 +95,7 @@ class AddressDiscovery @Inject constructor() {
      * default gateway. Returns true if the gateway acknowledged the mapping.
      * Silently false on PCP-only / UPnP-only / CGNAT routers.
      */
-    private suspend fun tryNatPmpMap(port: Int): Boolean = withContext(Dispatchers.IO) {
+    private suspend fun tryNatPmpMap(port: Int): Boolean = withContext(ioDispatcher) {
         val gateway = defaultGateway() ?: return@withContext false
         withTimeoutOrNull(1500) {
             runCatching {

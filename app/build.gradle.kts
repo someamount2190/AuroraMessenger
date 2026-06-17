@@ -24,6 +24,7 @@ android {
         targetSdk     = 34
         versionCode   = 1
         versionName   = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -59,6 +60,13 @@ android {
 
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }
+
+    testOptions {
+        // Pure-JVM unit tests. returnDefaultValues keeps incidental android.jar stubs
+        // from throwing during class-load; tests that need real Android behaviour use
+        // Robolectric or live in androidTest (see docs/TEST_ARCHITECTURE.md).
+        unitTests.isReturnDefaultValues = true
+    }
 
     sourceSets["main"].kotlin.srcDir("src/main/kotlin")
 
@@ -134,5 +142,23 @@ dependencies {
     // Phase 7: WebRTC peer-to-peer video/audio
     implementation(libs.webrtc)
 
+    // ── Unit tests (JVM) ─────────────────────────────────────────────────────
     testImplementation(libs.junit)
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:1.9.23")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
+    // Real org.json shadows the throw-on-call android.jar stub so JSON logic is testable.
+    testImplementation("org.json:json:20240303")
+    // App's own crypto test fakes reuse the published crypto module's interfaces.
+    testImplementation("com.aura:aura-crypto:0.1.0")
+    // Robolectric — runs Android-context tests (Room DAOs, settings) off-device.
+    testImplementation("org.robolectric:robolectric:4.12.2")
+    testImplementation("androidx.test:core:1.5.0")
+    testImplementation("app.cash.turbine:turbine:1.1.0")
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
+    // Instrumented tests — run on an emulator/device where liboqs jniLibs are present,
+    // so the native Kyber/Dilithium attack vectors actually execute.
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test:runner:1.5.2")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
+    androidTestImplementation(kotlin("test-junit"))
 }

@@ -50,7 +50,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.math.roundToInt
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
-import com.aura.call.CallManager
+import com.aura.call.CallController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
@@ -59,7 +59,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class CallViewModel @Inject constructor(
-    val callManager: CallManager
+    val callManager: CallController
 ) : ViewModel()
 
 @Composable
@@ -98,7 +98,7 @@ fun CallScreen(
     // call's permissions as the screen appears, so the camera/mic are ready by accept.
     // Outgoing calls already obtained them before startCall, so don't re-ask.
     LaunchedEffect(Unit) {
-        if (call.state != CallManager.CallState.OUTGOING) {
+        if (call.state != CallController.CallState.OUTGOING) {
             val missing = callPerms(call.isVideo).filterNot { granted(it) }
             if (missing.isNotEmpty()) callPermission.launch(missing.toTypedArray())
         }
@@ -110,7 +110,7 @@ fun CallScreen(
     }
 
     LaunchedEffect(call.state) {
-        if (call.state == CallManager.CallState.ENDED || call.state == CallManager.CallState.IDLE) {
+        if (call.state == CallController.CallState.ENDED || call.state == CallController.CallState.IDLE) {
             onCallEnded()
         }
     }
@@ -171,10 +171,10 @@ fun CallScreen(
             )
             Text(
                 when (call.state) {
-                    CallManager.CallState.OUTGOING   -> "Calling…"
-                    CallManager.CallState.INCOMING   -> "Incoming call"
-                    CallManager.CallState.CONNECTING -> "Connecting…"
-                    CallManager.CallState.CONNECTED  -> "Connected"
+                    CallController.CallState.OUTGOING   -> "Calling…"
+                    CallController.CallState.INCOMING   -> "Incoming call"
+                    CallController.CallState.CONNECTING -> "Connecting…"
+                    CallController.CallState.CONNECTED  -> "Connected"
                     else -> ""
                 },
                 color = Color.White.copy(alpha = 0.8f),
@@ -183,7 +183,7 @@ fun CallScreen(
         }
 
         // Controls
-        if (call.state == CallManager.CallState.INCOMING) {
+        if (call.state == CallController.CallState.INCOMING) {
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)

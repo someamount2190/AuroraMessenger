@@ -8,10 +8,14 @@ import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.db.MessageDao
 import com.aura.db.MessageEntity
-import com.aura.identity.IdentityManager
+import com.aura.identity.IdentityStore
 import com.aura.transport.MessageSender
 import com.aura.transport.TcpMessageServer
+import com.aura.transport.WireFrames
+import com.aura.ux.MessagePulse
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.aura.di.IoDispatcher
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,14 +38,15 @@ import javax.inject.Singleton
 @Singleton
 class MediaTransfer @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val identityManager: IdentityManager,
+    private val identityManager: IdentityStore,
     private val ratchet: RatchetManager,
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
-    private val mediaStore: MediaStore,
+    private val mediaStore: EncryptedMediaStore,
     private val messageSender: MessageSender,
     private val tcpServer: TcpMessageServer,
-    private val messagePulse: com.aura.ux.MessagePulse
+    private val messagePulse: MessagePulse,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private val _progress = MutableStateFlow<Map<String, Float>>(emptyMap())
     val progress: StateFlow<Map<String, Float>> = _progress
@@ -55,7 +60,7 @@ class MediaTransfer @Inject constructor(
 
     /** Pick → seal → store → send a gallery image/video. Returns the new message id. */
     suspend fun sendMedia(contactNodeIdHex: String, uri: Uri, type: String): String? =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val plaintext = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 ?: return@withContext null
             sendBytes(contactNodeIdHex, plaintext, type, durationMs = null)
@@ -63,7 +68,7 @@ class MediaTransfer @Inject constructor(
 
     /** Seal → store → send a recorded voice message. */
     suspend fun sendAudio(contactNodeIdHex: String, plaintext: ByteArray, durationMs: Long): String? =
-        withContext(Dispatchers.IO) { sendBytes(contactNodeIdHex, plaintext, "audio", durationMs) }
+        withContext(ioDispatcher) { sendBytes(contactNodeIdHex, plaintext, "audio", durationMs) }
 
     private suspend fun sendBytes(
         contactNodeIdHex: String,
@@ -72,7 +77,7 @@ class MediaTransfer @Inject constructor(
         durationMs: Long?
     ): String? {
         contactDao.byNodeId(contactNodeIdHex) ?: return null
-        if (plaintext.size > MediaStore.MAX_MEDIA_BYTES) return null
+        if (plaintext.size > EncryptedMediaStore.MAX_MEDIA_BYTES) return null
         // Local-only key: media is encrypted at rest with a key that survives the
         // ratchet (it never travels), so old media stays viewable on this device.
         val mediaKey = ratchet.mediaKey(contactNodeIdHex) ?: return null
@@ -159,10 +164,10 @@ class MediaTransfer @Inject constructor(
         val buf = java.io.ByteArrayOutputStream()
         var received = 0
         while (received < chunkCount) {
-            val cf = com.aura.transport.WireFrames.read(input) ?: return false
+            val cf = WireFrames.read(input) ?: return false
             if (cf.optString("t") != "mediachunk" || cf.optString("id") != messageId) return false
             buf.write(Base64.decode(cf.optString("data"), Base64.NO_WRAP))
-            if (buf.size() > MediaStore.MAX_MEDIA_BYTES + REASSEMBLY_SLACK) return false
+            if (buf.size() > EncryptedMediaStore.MAX_MEDIA_BYTES + REASSEMBLY_SLACK) return false
             received++
         }
         val sealed = buf.toByteArray()

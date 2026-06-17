@@ -32,7 +32,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.aura.call.CallManager
+import com.aura.call.CallController
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoTrack
@@ -45,7 +45,7 @@ import kotlin.math.roundToInt
  * draggable. Tapping it returns to the full call screen via [onExpand].
  */
 @Composable
-fun CallBubble(callManager: CallManager, onExpand: () -> Unit) {
+fun CallBubble(callManager: CallController, onExpand: () -> Unit) {
     val remote by callManager.remoteVideo.collectAsState()
     val call by callManager.call.collectAsState()
     var drag by remember { mutableStateOf(Offset.Zero) }

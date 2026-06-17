@@ -2,7 +2,9 @@ package com.aura.media
 
 import android.content.Context
 import com.aura.crypto.SymmetricCipher
+import com.aura.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -18,9 +20,10 @@ import javax.inject.Singleton
  * the user explicitly exports one ("Save to gallery").
  */
 @Singleton
-class MediaStore @Inject constructor(
+class EncryptedMediaStore @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val cipher: SymmetricCipher
+    private val cipher: SymmetricCipher,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     private val mediaDir: File by lazy {
         File(context.filesDir, "media").apply { mkdirs() }
@@ -30,7 +33,7 @@ class MediaStore @Inject constructor(
 
     /** Encrypt [plaintext] bytes to the message's media file. Returns the file path. */
     suspend fun writeEncrypted(messageId: String, plaintext: ByteArray, key: ByteArray): String =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val sealed = cipher.encrypt(plaintext, key, MEDIA_AAD).getOrThrow()
             val file = fileFor(messageId)
             file.writeBytes(sealed)
@@ -39,7 +42,7 @@ class MediaStore @Inject constructor(
 
     /** Store already-sealed bytes received over the wire (sender did the encryption). */
     suspend fun writeSealed(messageId: String, sealed: ByteArray): String =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val file = fileFor(messageId)
             file.writeBytes(sealed)
             file.absolutePath
@@ -47,25 +50,25 @@ class MediaStore @Inject constructor(
 
     /** Decrypt a media file to plaintext bytes (for preview / export). */
     suspend fun readDecrypted(path: String, key: ByteArray): ByteArray? =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             val file = File(path)
             if (!file.exists()) return@withContext null
             cipher.decrypt(file.readBytes(), key, MEDIA_AAD).getOrNull()
         }
 
     /** Raw sealed bytes (for sending — the receiver shares the key, so re-use the seal). */
-    suspend fun readSealed(path: String): ByteArray? = withContext(Dispatchers.IO) {
+    suspend fun readSealed(path: String): ByteArray? = withContext(ioDispatcher) {
         val file = File(path)
         if (file.exists()) file.readBytes() else null
     }
 
-    suspend fun delete(path: String) = withContext(Dispatchers.IO) {
+    suspend fun delete(path: String) = withContext(ioDispatcher) {
         runCatching { File(path).delete() }
         Unit
     }
 
     /** Delete every encrypted media file (full wipe). */
-    suspend fun wipeAll() = withContext(Dispatchers.IO) {
+    suspend fun wipeAll() = withContext(ioDispatcher) {
         runCatching { mediaDir.deleteRecursively() }
         Unit
     }

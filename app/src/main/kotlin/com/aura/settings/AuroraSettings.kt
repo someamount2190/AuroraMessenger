@@ -10,7 +10,7 @@ import javax.inject.Singleton
 
 /**
  * Non-secret app settings. Secret material (identity keys) lives in
- * [com.aura.identity.IdentityManager], never here.
+ * [com.aura.identity.IdentityStore], never here.
  */
 @Singleton
 class AuroraSettings @Inject constructor(

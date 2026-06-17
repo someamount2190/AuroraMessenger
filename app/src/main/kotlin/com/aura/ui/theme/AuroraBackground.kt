@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
+import com.aura.settings.ThemePalette
 
 /**
  * Fills the area with the theme background and paints soft diagonal aurora
@@ -37,7 +38,7 @@ fun AuroraBackground(
     // NOTE: keep a single `content()` call site (one Box) so switching palette only
     // changes the painting, never the composition structure — otherwise the whole
     // subtree (incl. the NavController) would be torn down and re-created.
-    val cherish = LocalThemePalette.current == com.aura.settings.ThemePalette.CHERISH
+    val cherish = LocalThemePalette.current == ThemePalette.CHERISH
 
     Box(
         modifier = modifier
@@ -105,7 +106,7 @@ fun AuroraBackground(
  */
 fun Modifier.auroraGlass(shape: Shape = RoundedCornerShape(18.dp)): Modifier = composed {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val cherish = LocalThemePalette.current == com.aura.settings.ThemePalette.CHERISH
+    val cherish = LocalThemePalette.current == ThemePalette.CHERISH
     if (!dark || cherish) {
         this
     } else {
