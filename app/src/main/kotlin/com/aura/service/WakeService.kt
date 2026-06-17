@@ -1,5 +1,6 @@
 package com.aura.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -32,6 +34,12 @@ class WakeService : Service() {
 
     @Inject lateinit var appWiring: AppWiring
 
+    // While a call is live we add the microphone (and camera, for video) FGS type so the
+    // OS keeps mic/camera and call-grade priority alive after the Activity is gone. Kept
+    // as fields so a START_STICKY restart re-asserts the correct type.
+    private var callActive = false
+    private var callVideo = false
+
     override fun onCreate() {
         super.onCreate()
         goForeground()
@@ -39,7 +47,12 @@ class WakeService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Re-assert foreground + wiring in case the system recreated us (START_STICKY).
+        // A call-state command toggles the mic/camera FGS type; any other start just
+        // re-asserts foreground + wiring (e.g. START_STICKY recreation).
+        if (intent?.action == ACTION_CALL_STATE) {
+            callActive = intent.getBooleanExtra(EXTRA_CALL_ACTIVE, false)
+            callVideo = intent.getBooleanExtra(EXTRA_VIDEO, false)
+        }
         goForeground()
         appWiring.ensureStarted()
         return START_STICKY
@@ -48,14 +61,27 @@ class WakeService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun goForeground() {
-        val n = buildNotification()
-        // Android 14+ requires the typed overload; the manifest declares specialUse.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(NOTIF_ID, n)
-        }
+        // Typed overload is available since API 23; minSdk is 29, so always use it so the
+        // service's effective FGS type tracks whether a call is live.
+        startForeground(NOTIF_ID, buildNotification(), foregroundTypes())
     }
+
+    /** specialUse always; microphone (+camera for video) added while a call is live. */
+    private fun foregroundTypes(): Int {
+        var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        if (callActive) {
+            if (hasPermission(Manifest.permission.RECORD_AUDIO)) {
+                types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+            if (callVideo && hasPermission(Manifest.permission.CAMERA)) {
+                types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            }
+        }
+        return types
+    }
+
+    private fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
     private fun buildNotification(): Notification {
         ensureChannel()
@@ -94,10 +120,28 @@ class WakeService : Service() {
     companion object {
         private const val CH_BACKGROUND = "background"
         private const val NOTIF_ID = 1100
+        private const val ACTION_CALL_STATE = "com.aura.service.action.CALL_STATE"
+        private const val EXTRA_CALL_ACTIVE = "call_active"
+        private const val EXTRA_VIDEO = "video"
 
         /** Start the wake service (foreground-safe; call from an Activity context). */
         fun start(context: Context) {
             ContextCompat.startForegroundService(context, Intent(context, WakeService::class.java))
+        }
+
+        /**
+         * Tell the wake service a call started/ended so it can add or drop the
+         * microphone/camera FGS type. Must be called while the app is foreground when
+         * activating (a call always starts/answers from the foreground), so adding the
+         * mic type is permitted; deactivating just re-asserts the already-running service.
+         */
+        fun setCallActive(context: Context, active: Boolean, video: Boolean) {
+            val intent = Intent(context, WakeService::class.java).apply {
+                action = ACTION_CALL_STATE
+                putExtra(EXTRA_CALL_ACTIVE, active)
+                putExtra(EXTRA_VIDEO, video)
+            }
+            ContextCompat.startForegroundService(context, intent)
         }
     }
 }

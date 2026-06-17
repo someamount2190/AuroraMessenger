@@ -48,10 +48,14 @@ that today's public-key cryptography will remain unbroken.
 
 ## Features
 
-- Text and media messaging (photos/video, app-private encrypted storage)
+- Text and media messaging — photos and videos (with in-app thumbnails and a fullscreen
+  video player: play/pause, scrubbable seek bar, decrypted and played from memory) plus
+  voice messages; all in app-private encrypted storage
 - Voice and video calls (WebRTC) with real incoming-call ringing and lock-screen handling;
   an in-app ongoing-call bar and a floating system overlay keep a live call visible (and
-  one tap away) while you use the rest of the phone, and a second call can't start while one is active
+  one tap away) while you use the rest of the phone, and a second call can't start while one is active.
+  Leaving the app keeps the call running — the foreground service holds the microphone/camera
+  and call-grade priority so backgrounding (Back, screen off) no longer drops it
 - Message replies, reactions, and disappearing messages (per-conversation timers)
 - App lock with a decoy PIN, optional **duress wipe**, and screenshot/recents protection (`FLAG_SECURE`)
 - **Cryptographic erase**: destroying keys renders all on-disk ciphertext unrecoverable instantly

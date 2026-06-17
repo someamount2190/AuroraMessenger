@@ -2,14 +2,24 @@
 
 All notable changes to **Aurora Messenger** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project uses a single pre-alpha
-line (`0.1.0-pre`) while the design stabilises.
+line (`0.2.0-pre`) while the design stabilises.
 
 ## [Unreleased]
 
-Work after the first pre-alpha tag. The signed APK attached to the `v0.1.0-pre` GitHub
-release is refreshed as these land.
+Nothing yet.
+
+## [0.2.0-pre] — 2026-06-17
+
+The second pre-alpha. It adds in-app video playback, keeps calls alive when you leave the
+app, and lands a large internal architecture cleanup — on top of everything that had
+accumulated since the first tag.
 
 ### Added
+- **In-app video playback.** Sent and received videos now play inside the app: the
+  conversation shows a real first-frame thumbnail with a play badge, and tapping opens a
+  fullscreen player with transport controls — play/pause, a scrubbable seek bar, and
+  elapsed/total time. Video is decrypted and played straight from memory (no plaintext
+  file is written to disk) and stays inside the screenshot-blocked (`FLAG_SECURE`) window.
 - **Minimise a call with Back.** A call keeps running when you leave its screen: the app
   shows a draggable floating remote-video bubble (tap to return) and an ongoing
   "call in progress" notification with an End control, instead of dropping the call or
@@ -29,6 +39,12 @@ release is refreshed as these land.
   (`./gradlew -p crypto publish`); the app depends on the published coordinate.
 
 ### Fixed
+- **Calls dropped when you left the app.** Leaving a call (Back to the launcher, screen
+  off) let the OS cut the microphone/camera and deprioritise the process under battery
+  saver / Doze, silently disconnecting the call. While a call is live the keep-alive
+  foreground service now asserts the `microphone` (and `camera`, for video) service type,
+  so mic/camera and call-grade process priority survive backgrounding; it reverts to the
+  low-priority keep-alive type when the call ends.
 - **Calls crashed on connect.** A `CallStyle` ongoing-call notification was posted from
   inside a WebRTC observer callback running on the native signalling thread; the system
   rejected it, and the escaping Java exception aborted the whole process through WebRTC's
@@ -52,6 +68,16 @@ release is refreshed as these land.
   conversation menu.
 
 ### Changed
+- **Internal architecture cleanup (behaviour-preserving).** Renamed the `*Manager` god/
+  coordinator classes to role-based names (`CallController`, `PairingCoordinator`,
+  `IdentityStore`, `AppLock`, …), split the call and pairing managers and the Home/
+  Conversation/Settings screens into focused collaborators and view-models, stopped
+  shadowing the platform `MediaStore` (now `EncryptedMediaStore`), and enforced Kotlin
+  conventions (constructor-injected coroutine dispatchers, no swallowed cancellation, no
+  `!!`, imports over fully-qualified references).
+- **Test suite.** Added JVM/Robolectric unit tests for the crypto core and app layer plus
+  native instrumented crypto/attack tests, with `docs/TEST_ARCHITECTURE.md` and
+  `docs/TEST_STATUS.md`.
 - Video calls use software VP8/VP9 codecs for cross-device portability. (The native
   post-quantum / Bouncy Castle stack is unchanged.)
 - `android.util.Base64` in the crypto core was replaced with `java.util.Base64` as part of
@@ -103,5 +129,6 @@ with a signed APK attached as a release asset.
   DigitalOcean droplet behind Nginx with TLS (Let's Encrypt) and **certificate pinning**
   at `api.auroramessenger.com`.
 
-[Unreleased]: https://github.com/someamount2190/AuroraMessenger/compare/v0.1.0-pre...HEAD
+[Unreleased]: https://github.com/someamount2190/AuroraMessenger/compare/v0.2.0-pre...HEAD
+[0.2.0-pre]: https://github.com/someamount2190/AuroraMessenger/compare/v0.1.0-pre...v0.2.0-pre
 [0.1.0-pre]: https://github.com/someamount2190/AuroraMessenger/releases/tag/v0.1.0-pre

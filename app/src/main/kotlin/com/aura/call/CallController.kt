@@ -7,6 +7,7 @@ import com.aura.db.MessageEntity
 import java.util.UUID
 import com.aura.network.SyncEngine
 import com.aura.notify.Notifier
+import com.aura.service.WakeService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -123,6 +124,9 @@ class CallController @Inject constructor(
         session.resetForNewCall()
         _minimized.value = false
         session.setVideoEnabled(video)
+        // Hold the mic/camera FGS type for the call now (we're foreground), so pressing
+        // BACK / leaving the app doesn't let the OS cut the mic or drop the connection.
+        WakeService.setCallActive(context, active = true, video = video)
         s.launch {
             val contact = contactDao.byNodeId(peerNodeIdHex)
             _call.value = CallInfo(CallState.OUTGOING, peerNodeIdHex, contact?.displayName, isCaller = true, isVideo = video)
@@ -148,6 +152,8 @@ class CallController @Inject constructor(
         ringTimeoutJob?.cancel()
         callAcceptedByMe = true
         session.setVideoEnabled(pendingOfferIsVideo)
+        // Accepting brings us foreground; hold the mic/camera FGS type for the live call.
+        WakeService.setCallActive(context, active = true, video = pendingOfferIsVideo)
         s.launch {
             _call.value = _call.value.copy(state = CallState.CONNECTING)
             session.create()
@@ -260,6 +266,8 @@ class CallController @Inject constructor(
         ringer.stop()
         ringTimeoutJob?.cancel()
         session.dispose()
+        // Drop the mic/camera FGS type — back to the low-priority keep-alive service.
+        WakeService.setCallActive(context, active = false, video = false)
         remoteNodeIdHex = null
         pendingOfferSdp = null
         pendingOfferIsVideo = true

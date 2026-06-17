@@ -18,6 +18,12 @@
          long-poll so a peer's tap can rouse the app to receive messages/calls. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- While a call is live the wake service asserts the microphone (and camera, for
+         video) FGS type so the OS keeps mic/camera and call-grade process priority
+         alive when the Activity is gone (BACK / screen off) — otherwise backgrounding
+         a call cuts the mic and lets battery saver / Doze drop the connection. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <!-- Ask the user to exempt Aurora from Doze so the parked socket survives sleep. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Floating call window over other apps (Messenger/Viber-style call bubble). -->
@@ -95,7 +101,7 @@
         <service
             android:name=".service.WakeService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse|microphone|camera">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Maintains an end-to-end encrypted connection to receive messages and calls while the app is in the background." />
