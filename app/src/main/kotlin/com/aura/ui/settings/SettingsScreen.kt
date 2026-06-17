@@ -338,7 +338,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()
             Text(
-                text = "Aurora · 0.1.0\nPost-quantum · end-to-end encrypted",
+                text = "Aurora · ${com.aura.BuildConfig.VERSION_NAME}\nPost-quantum · end-to-end encrypted",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

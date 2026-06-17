@@ -22,8 +22,8 @@ android {
         applicationId = "com.aura"
         minSdk        = 29
         targetSdk     = 34
-        versionCode   = 2
-        versionName   = "0.2.0"
+        versionCode   = 3
+        versionName   = "0.2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -58,7 +58,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }
 
     testOptions {

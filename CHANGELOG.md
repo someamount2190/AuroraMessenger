@@ -2,11 +2,27 @@
 
 All notable changes to **Aurora Messenger** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project uses a single pre-alpha
-line (`0.2.0-pre`) while the design stabilises.
+line (`0.2.1-pre`) while the design stabilises.
 
 ## [Unreleased]
 
 Nothing yet.
+
+## [0.2.1-pre] — 2026-06-17
+
+A pairing-reliability patch.
+
+### Fixed
+- **A host showing their QR now sees an incoming request.** Previously, if you opened
+  "Show my code" and waited, a friend scanning your code seemed to do nothing: the request
+  was received and stored, but it only appeared on the home list *behind* the QR screen,
+  and the in-app notification is suppressed while the app is foreground — so the host saw
+  nothing and pairing looked broken. The host is now pulled to the request (with a
+  "Someone wants to connect" prompt) the moment it arrives. (The handshake itself, incl.
+  one side backgrounding mid-pairing, was already working — it resumes via the rendezvous
+  wake.)
+- **The in-app version footer was hardcoded** to `0.1.0`; it now shows the real build
+  version (`BuildConfig.VERSION_NAME`).
 
 ## [0.2.0-pre] — 2026-06-17
 
@@ -129,6 +145,7 @@ with a signed APK attached as a release asset.
   DigitalOcean droplet behind Nginx with TLS (Let's Encrypt) and **certificate pinning**
   at `api.auroramessenger.com`.
 
-[Unreleased]: https://github.com/someamount2190/AuroraMessenger/compare/v0.2.0-pre...HEAD
+[Unreleased]: https://github.com/someamount2190/AuroraMessenger/compare/v0.2.1-pre...HEAD
+[0.2.1-pre]: https://github.com/someamount2190/AuroraMessenger/compare/v0.2.0-pre...v0.2.1-pre
 [0.2.0-pre]: https://github.com/someamount2190/AuroraMessenger/compare/v0.1.0-pre...v0.2.0-pre
 [0.1.0-pre]: https://github.com/someamount2190/AuroraMessenger/releases/tag/v0.1.0-pre
