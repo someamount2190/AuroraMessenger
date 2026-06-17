@@ -69,6 +69,7 @@ class PairingCoordinator @Inject constructor(
         data class Failed(override val nodeIdHex: String) : PairEvent    // verification gave up (blocked)
         data class ContactRemoved(override val nodeIdHex: String, val name: String) : PairEvent  // peer deleted us
         data class WeakPairing(override val nodeIdHex: String) : PairEvent  // FS prekeys advertised but unavailable → legacy fallback
+        data class IncomingRequest(override val nodeIdHex: String) : PairEvent  // someone scanned our code and wants to connect
     }
 
     private val _events = MutableSharedFlow<PairEvent>(extraBufferCapacity = 8)
@@ -281,6 +282,11 @@ class PairingCoordinator @Inject constructor(
             )
         )
         notifier.notifyContactRequest()
+        // Tell the UI a request arrived so a host sitting on the "Show my code" screen
+        // is pulled to where they can Accept/Reject — otherwise the request only appears
+        // on the home list behind the QR screen (and the foreground notification is
+        // suppressed), so the host thinks nothing happened.
+        _events.tryEmit(PairEvent.IncomingRequest(from))
         Unit
     }
 
