@@ -57,6 +57,7 @@ import com.aura.ui.conversation.ConversationScreen
 import com.aura.ui.home.HomeScreen
 import com.aura.ui.legal.LegalScreen
 import com.aura.ui.onboarding.OnboardingScreen
+import com.aura.ui.onboarding.PermissionsScreen
 import com.aura.ui.qr.MyCodeScreen
 import com.aura.ui.qr.ScanScreen
 import com.aura.ui.settings.SettingsScreen
@@ -70,6 +71,7 @@ import javax.inject.Inject
 object Routes {
     const val SPLASH       = "splash"
     const val ONBOARDING   = "onboarding"
+    const val PERMISSIONS  = "permissions"
     const val HOME         = "home"
     const val MY_CODE      = "mycode?host={host}"
     const val SCAN         = "scan"
@@ -240,12 +242,23 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
         }
         composable(Routes.ONBOARDING) {
             OnboardingScreen(
+                // The info pages don't complete onboarding — they hand off to the
+                // permission gate, which is what actually unlocks the app.
                 onDone = {
-                    navController.navigate(Routes.HOME) {
+                    navController.navigate(Routes.PERMISSIONS) {
                         popUpTo(Routes.ONBOARDING) { inclusive = true }
                     }
                 },
                 onOpenLegal = { doc -> navController.navigate(Routes.legal(doc)) }
+            )
+        }
+        composable(Routes.PERMISSIONS) {
+            PermissionsScreen(
+                onComplete = {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.PERMISSIONS) { inclusive = true }
+                    }
+                }
             )
         }
         composable(Routes.HOME) {

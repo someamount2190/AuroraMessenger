@@ -8,6 +8,33 @@ line (`0.2.1-pre`) while the design stabilises.
 
 Nothing yet.
 
+## [0.2.2-pre] — 2026-06-17
+
+An onboarding patch that makes sure a new install can actually receive messages.
+
+### Added
+- **Onboarding permission gate.** A new step at the end of first-run setup explains, in
+  plain language, the permissions Aurora needs and why — and won't let you into the app
+  until the two delivery-critical ones are granted:
+  - **Notifications** — so you're told about a new message, an incoming call, or a contact
+    request. Without it those arrive silently and are easily missed (this is what made a
+    fresh install look like it "never received" a pairing handshake).
+  - **Run in the background** (battery/Doze exemption) — so messages and calls reach you
+    when Aurora is closed or the screen is off, and so the device publishes its prekey
+    bundle for forward-secret pairing.
+
+  **Microphone** (voice messages/calls) and **Camera** (QR scanning/video calls) are
+  presented as optional and can be enabled now or on first use. **Photos & videos** is
+  shown for transparency only — sharing uses Android's system picker, so there's no
+  gallery permission to grant. The screen re-checks on return from system dialogs and
+  routes to app settings if a permission was permanently denied.
+
+### Infrastructure
+- **Rendezvous `/health` endpoint** — a minimal, identifier-free liveness probe
+  (status + uptime, CORS-open) powering the new public status page. The server's nginx
+  access logging for the API host was turned off so it no longer retains any
+  IP↔node↔timestamp history, matching the zero-log promise.
+
 ## [0.2.1-pre] — 2026-06-17
 
 A pairing-reliability patch.
@@ -145,7 +172,8 @@ with a signed APK attached as a release asset.
   DigitalOcean droplet behind Nginx with TLS (Let's Encrypt) and **certificate pinning**
   at `api.auroramessenger.com`.
 
-[Unreleased]: https://github.com/someamount2190/AuroraMessenger/compare/v0.2.1-pre...HEAD
+[Unreleased]: https://github.com/someamount2190/AuroraMessenger/compare/v0.2.2-pre...HEAD
+[0.2.2-pre]: https://github.com/someamount2190/AuroraMessenger/compare/v0.2.1-pre...v0.2.2-pre
 [0.2.1-pre]: https://github.com/someamount2190/AuroraMessenger/compare/v0.2.0-pre...v0.2.1-pre
 [0.2.0-pre]: https://github.com/someamount2190/AuroraMessenger/compare/v0.1.0-pre...v0.2.0-pre
 [0.1.0-pre]: https://github.com/someamount2190/AuroraMessenger/releases/tag/v0.1.0-pre

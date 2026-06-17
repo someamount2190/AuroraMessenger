@@ -23,6 +23,7 @@
 
 const http = require('http');
 const crypto = require('crypto');
+const START_MS = Date.now();
 
 const PORT = process.env.PORT || 8080;
 // AGPL-3.0 §13: users interacting with this server over the network must be able to
@@ -388,6 +389,14 @@ const server = http.createServer((req, res) => {
     if (!b) return send(res, 404, { error: 'no prekey bundle' });
     const opk = (b.opks && b.opks.length) ? b.opks.shift() : null;
     return send(res, 200, { spk: b.spk, opk: opk || null });
+  }
+
+  // Liveness probe for the public status page. No identifiers, no counts —
+  // just up/uptime. CORS-open so the static status page can fetch it.
+  if (req.method === 'GET' && url === '/health') {
+    const bodyH = JSON.stringify({ status: 'ok', service: 'aurora-rendezvous', uptimeSeconds: Math.floor((Date.now() - START_MS) / 1000), since: new Date(START_MS).toISOString() });
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' });
+    return res.end(bodyH);
   }
 
   // AGPL-3.0 §13: offer the Corresponding Source to remote users.

@@ -40,7 +40,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aura.R
 import com.aura.identity.IdentityStore
-import com.aura.settings.AuroraSettings
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,7 +48,6 @@ import javax.inject.Inject
 
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
-    private val settings: AuroraSettings,
     private val identityManager: IdentityStore
 ) : ViewModel() {
 
@@ -62,10 +60,6 @@ class OnboardingViewModel @Inject constructor(
             identityManager.getOrCreate()
             _ready.value = true
         }
-    }
-
-    fun markDone() {
-        settings.onboardingDone = true
     }
 }
 
@@ -181,7 +175,7 @@ fun OnboardingScreen(
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                         Button(
-                            onClick = { viewModel.markDone(); onDone() },
+                            onClick = { onDone() },
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("Get started") }
                         Spacer(Modifier.height(10.dp))

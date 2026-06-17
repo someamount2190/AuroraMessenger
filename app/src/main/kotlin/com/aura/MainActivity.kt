@@ -47,7 +47,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Phase 8: screenshot prevention + no content in the recents preview.
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-        maybeRequestNotificationPermission()
+        // Fresh installs are walked through permissions by the onboarding gate
+        // (com.aura.ui.onboarding.PermissionsScreen), which owns the notification prompt.
+        // Only nudge already-onboarded upgrades that predate that gate here.
+        if (auroraSettings.onboardingDone) maybeRequestNotificationPermission()
         maybeStartWakeService()
         observeCallWindowFlags()
         observeMinimizeForOverlayPermission()
