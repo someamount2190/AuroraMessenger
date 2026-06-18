@@ -76,6 +76,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import com.aura.transport.rtc.RtcState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -142,6 +143,7 @@ fun ConversationScreen(
     val isRecording by viewModel.isRecording.collectAsState()
     val playingId by viewModel.playingId.collectAsState()
     val callActive by viewModel.callActive.collectAsState()
+    val connection by viewModel.connection.collectAsState()
     // Mark the conversation read on open and whenever new messages land while it's visible.
     LaunchedEffect(messages) { if (messages.isNotEmpty()) viewModel.markRead() }
     // Leave the screen if the contact disappears (we deleted it, or the peer removed us).
@@ -239,6 +241,25 @@ fun ConversationScreen(
                                 "⏱ Disappearing: ${currentTimer.label}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        // P2P reachability — reflects the live data-channel state and
+                        // surfaces connection failures honestly (WebRTC transport patch).
+                        val connText = when (connection) {
+                            RtcState.CONNECTED -> "🔒 Connected · peer-to-peer"
+                            RtcState.SIGNALING, RtcState.GATHERING, RtcState.CHECKING -> "Connecting…"
+                            RtcState.FAILED -> "Couldn't connect directly — try when one of you is on Wi-Fi"
+                            RtcState.IDLE -> null
+                        }
+                        if (connText != null) {
+                            Text(
+                                connText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = when (connection) {
+                                    RtcState.CONNECTED -> MaterialTheme.colorScheme.primary
+                                    RtcState.FAILED -> MaterialTheme.colorScheme.error
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                         }
                     }

@@ -112,8 +112,8 @@ class TcpMessageServer @Inject constructor(
             while (true) {
                 val frame = WireFrames.read(input) ?: break
                 when (frame.optString("t")) {
-                    "msg"   -> handleMsg(frame, output)
-                    "ctl"   -> handleCtl(frame, output)
+                    "msg"   -> processMsg(frame)?.let { WireFrames.write(output, it) }
+                    "ctl"   -> processCtl(frame)?.let { WireFrames.write(output, it) }
                     "relay" -> handleRelay(frame, output)
                     "media" -> { if (mediaHandler?.invoke(frame, s) != true) break }
                     else    -> break
@@ -122,30 +122,41 @@ class TcpMessageServer @Inject constructor(
         }
     }
 
-    private suspend fun handleMsg(frame: JSONObject, output: java.io.OutputStream) {
+    /**
+     * Transport-agnostic frame handling reused by the WebRTC data channel
+     * ([com.aura.transport.rtc.RtcTransport]). Returns the ack frame to send back, or
+     * null when no response is warranted (frame not for us / unknown peer / decrypt
+     * fails). The caller writes the ack over whatever transport delivered the frame.
+     */
+    suspend fun processFrame(frame: JSONObject): JSONObject? = when (frame.optString("t")) {
+        "msg" -> processMsg(frame)
+        "ctl" -> processCtl(frame)
+        else  -> null
+    }
+
+    private suspend fun processMsg(frame: JSONObject): JSONObject? {
         val identity = identityManager.getOrCreate()
         val myNodeId = identity.nodeId.toHex()
         val from = frame.optString("from")
         val to = frame.optString("to")
-        if (to != myNodeId) return
+        if (to != myNodeId) return null
 
-        val contact = contactDao.byNodeId(from) ?: return
+        contactDao.byNodeId(from) ?: return null   // ignore frames from unknown peers
         val id = frame.optString("id")
 
         // Already stored (a retransmit after a lost ack): re-ack idempotently. The
         // message id rides in the cleartext frame header, so no decryption needed —
         // and the ratchet key for this counter has already been consumed.
         if (id.isNotEmpty() && messageDao.byId(id) != null) {
-            WireFrames.write(output, JSONObject().put("t", "ack").put("id", id))
-            return
+            return JSONObject().put("t", "ack").put("id", id)
         }
 
         val sealed = Base64.decode(frame.optString("sealed"), Base64.NO_WRAP)
         val n = frame.optLong("n", -1)
         val aad = "aura-msg-v1|$from|$to".toByteArray()
 
-        val plaintext = ratchet.open(from, n, sealed, aad) ?: return
-        val inner = try { JSONObject(String(plaintext, Charsets.UTF_8)) } catch (e: Exception) { return }
+        val plaintext = ratchet.open(from, n, sealed, aad) ?: return null
+        val inner = try { JSONObject(String(plaintext, Charsets.UTF_8)) } catch (e: Exception) { return null }
 
         val entity = MessageEntity(
             id               = frame.optString("id"),
@@ -164,28 +175,28 @@ class TcpMessageServer @Inject constructor(
         onMessageStored?.invoke(entity)
         messagePulse.pulse(from)
 
-        WireFrames.write(output, JSONObject().put("t", "ack").put("id", frame.optString("id")))
+        return JSONObject().put("t", "ack").put("id", frame.optString("id"))
     }
 
-    private suspend fun handleCtl(frame: JSONObject, output: java.io.OutputStream) {
+    private suspend fun processCtl(frame: JSONObject): JSONObject? {
         val identity = identityManager.getOrCreate()
         val myNodeId = identity.nodeId.toHex()
         val from = frame.optString("from")
-        if (frame.optString("to") != myNodeId) return
-        contactDao.byNodeId(from) ?: return   // ignore frames from unknown peers
+        if (frame.optString("to") != myNodeId) return null
+        contactDao.byNodeId(from) ?: return null   // ignore frames from unknown peers
 
         val sealed = Base64.decode(frame.optString("sealed"), Base64.NO_WRAP)
         val n = frame.optLong("n", -1)
         val aad = "aura-ctl-v1|$from|$myNodeId".toByteArray()
-        val plaintext = ratchet.open(from, n, sealed, aad) ?: return
-        val inner = try { JSONObject(String(plaintext, Charsets.UTF_8)) } catch (e: Exception) { return }
+        val plaintext = ratchet.open(from, n, sealed, aad) ?: return null
+        val inner = try { JSONObject(String(plaintext, Charsets.UTF_8)) } catch (e: Exception) { return null }
 
         // Route sealed control messages by their inner "ctl" type.
         when (inner.optString("ctl")) {
             "react" -> reactionHandler?.invoke(from, inner)
             else    -> controlHandler?.invoke(from, inner)
         }
-        WireFrames.write(output, JSONObject().put("t", "ack").put("id", inner.optString("id")))
+        return JSONObject().put("t", "ack").put("id", inner.optString("id"))
     }
 
     /** Single-hop onion relay: forward opaque bytes, pipe one response frame back. */

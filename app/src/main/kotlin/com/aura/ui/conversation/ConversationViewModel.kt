@@ -27,6 +27,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -50,10 +51,25 @@ class ConversationViewModel @Inject constructor(
     private val voiceRecorder: VoiceRecorder,
     private val pairingManager: PairingCoordinator,
     private val callManager: CallController,
+    private val rtcTransport: com.aura.transport.rtc.RtcTransport,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
     val contactId: String = savedStateHandle.get<String>("contactId").orEmpty()
+
+    /** Live P2P data-channel state for this contact — drives the header's reachability
+     *  indicator and surfaces connection failures (per the WebRTC transport patch). */
+    val connection: StateFlow<com.aura.transport.rtc.RtcState> = rtcTransport.state(contactId)
+
+    init {
+        // When the conversation is open and the contact is fully paired, attempt a direct
+        // peer-to-peer connection so the header reflects reachability right away — this is
+        // also the moment "pairing reflects the result", since pairing lands in the chat.
+        viewModelScope.launch {
+            contactDao.observeByNodeId(contactId).first { it?.pairState == PairState.ACTIVE }
+            rtcTransport.connectAsync(contactId)
+        }
+    }
 
     /** True while any call is active anywhere — used to disable the call buttons so a
      *  second call (this contact or another) can't be started over an ongoing one. */

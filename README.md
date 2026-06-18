@@ -11,9 +11,11 @@ that today's public-key cryptography will remain unbroken.
 
 > **Status:** mature work-in-progress. The cryptographic core, pairing, messaging,
 > media, calls, hardening, and infrastructure are implemented and tested across
-> emulators. Some end-to-end paths (live two-device calls and handshakes) require
-> physical devices to fully validate, owing to emulator networking constraints
-> (shared ICE candidates, QR camera) rather than implementation gaps.
+> emulators. As of **v0.2.3-pre**, messaging connects **peer-to-peer over WebRTC
+> (ICE + self-hosted STUN, IPv6-first)** so it can traverse carrier NAT, with direct
+> TCP as a same-network fast path. Some end-to-end paths (live two-device calls and the
+> new data-channel connect) require physical devices to fully validate, owing to emulator
+> networking constraints (shared ICE candidates, QR camera) rather than implementation gaps.
 
 ## For auditors & security researchers
 
@@ -32,7 +34,7 @@ Aurora is being prepared for independent review. Start here:
 | [`docs/TEST_ARCHITECTURE.md`](docs/TEST_ARCHITECTURE.md) · [`docs/TEST_STATUS.md`](docs/TEST_STATUS.md) | Test strategy & status |
 
 > Some `docs/` files are being authored in phases; each states its status at the top. Pin
-> any review to a specific tag (e.g. `v0.2.2-pre`) so findings map to exact source.
+> any review to a specific tag (e.g. `v0.2.3-pre`) so findings map to exact source.
 
 ### Cryptographic primitives
 
@@ -149,8 +151,14 @@ reconciliation note.
 
 ## Networking model
 
-- **Transport:** direct TCP between peers (XChaCha20-Poly1305 sealed frames), with an
-  offline queue and an optional opt-in single-hop relay.
+- **Transport:** peer-to-peer, with the server out of the data path once connected.
+  Messages prefer a **WebRTC data channel** (ICE + self-hosted STUN, no TURN) so they
+  traverse carrier NAT — IPv6 first, degrading to IPv4 — and fall back to **direct TCP**
+  (XChaCha20-Poly1305 sealed frames) on the same network. Both transports carry an
+  identical sealed frame; an offline queue and an optional opt-in single-hop relay remain.
+  When no direct/punched path exists (e.g. both peers on symmetric carrier NAT with no
+  IPv6) the connection reports it honestly rather than silently failing; a peer-relay
+  (ShadowMesh) for that residual is future work.
 - **Rendezvous server:** in-memory only, **15-minute TTL**, never logs payloads.
   Check-ins are hybrid-signed; `/find` always returns exactly 10 candidates
   (real + dummies, shuffled) and only the real one verifies against the target's key;
@@ -158,6 +166,10 @@ reconciliation note.
   their own signals. Endpoints: `/checkin`, `/find/:nodeId`, `/signal/:nodeId`,
   `/tap/:nodeId` + `/wait/:nodeId` (contentless wake/push), `/prekeys/:nodeId` (signed
   PQXDH bundles), `/source` (AGPL source pointer).
+- **STUN (NAT traversal):** a self-hosted **coturn in STUN-only mode** (no TURN relay)
+  runs on the rendezvous droplet, dual-stack, so peers discover their public address for
+  ICE hole punching. STUN is a mirror, never a relay — the droplet stays out of the data
+  path. (ICE signaling — offer/answer/candidates — is sealed and carried over `/signal`.)
 - **Production server:** the hosted rendezvous service runs behind **TLS with
   certificate pinning** in the app, so interception is blocked even against a rogue
   certificate authority. A dependency-free Node.js implementation lives in

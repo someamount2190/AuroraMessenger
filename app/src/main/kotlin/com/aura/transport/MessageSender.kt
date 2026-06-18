@@ -11,6 +11,7 @@ import com.aura.db.MessageDao
 import com.aura.identity.IdentityStore
 import com.aura.network.RendezvousClient
 import com.aura.settings.AuroraSettings
+import com.aura.transport.rtc.RtcTransport
 import com.aura.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,7 @@ class MessageSender @Inject constructor(
     private val meshPeerDao: MeshPeerDao,
     private val rendezvousClient: RendezvousClient,
     private val settings: AuroraSettings,
+    private val rtcTransport: RtcTransport,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private val flushMutex = Mutex()
@@ -59,15 +61,29 @@ class MessageSender @Inject constructor(
         val contactsWithPending = messageDao.contactsWithPending()
         for (nodeIdHex in contactsWithPending) {
             val contact = contactDao.byNodeId(nodeIdHex) ?: continue
+
+            // Preferred path: the peer-to-peer WebRTC data channel (traverses carrier
+            // NAT via ICE/STUN, server out of the path). If it's open, deliver over it.
+            if (rtcTransport.isConnected(nodeIdHex)) {
+                deliverPendingOver(contact) { frame -> rtcTransport.send(nodeIdHex, frame) }
+                if (messageDao.pendingForContact(nodeIdHex).isEmpty()) continue
+            } else {
+                // Not connected yet — warm up an RTC session in the background so a
+                // later retry can use it (a CGNAT peer that TCP can't reach).
+                rtcTransport.connectAsync(nodeIdHex)
+            }
+
+            // Fallback: TCP direct/relay via the rendezvous-resolved address (LAN and
+            // directly-reachable peers). Keeps same-network delivery instant.
             val address = resolvePeerAddress(contact)
             if (address == null) {
                 android.util.Log.d("AuroraSend", "resolve failed for ${nodeIdHex.take(8)}")
                 // Peer isn't registered right now — tap their wake channel so the
-                // backgrounded app comes online; next flush delivers directly.
+                // backgrounded app comes online; next flush delivers.
                 rendezvousClient.tap(settings.serverAddress.value, nodeIdHex)
                 continue
             }
-            deliverPendingTo(contact, address)
+            deliverPendingOver(contact) { frame -> exchangeFrame(address, frame) }
         }
     }
 
@@ -90,7 +106,15 @@ class MessageSender @Inject constructor(
         return real?.let { PeerAddress(it.ip, it.port) }
     }
 
-    private suspend fun deliverPendingTo(contact: ContactEntity, address: PeerAddress) {
+    /**
+     * Deliver all pending messages for [contact] over a transport-agnostic [send]
+     * round-trip (RTC data channel or TCP). [send] takes a request frame and returns
+     * the peer's response frame (an "ack"), or null if the round-trip failed.
+     */
+    private suspend fun deliverPendingOver(
+        contact: ContactEntity,
+        send: suspend (JSONObject) -> JSONObject?
+    ) {
         val pending = messageDao.pendingForContact(contact.nodeIdHex)
         if (pending.isEmpty()) return
         val identity = identityManager.getOrCreate()
@@ -131,9 +155,9 @@ class MessageSender @Inject constructor(
                 .put("n", n)
                 .put("sealed", sealedB64)
 
-            val response = exchangeFrame(address, frame)
+            val response = send(frame)
             if (response == null) {
-                // Resolved but unreachable (peer dropped) — tap to wake, retry next flush.
+                // Unreachable on this transport (peer dropped) — tap to wake, retry next flush.
                 rendezvousClient.tap(settings.serverAddress.value, contact.nodeIdHex)
                 break
             }

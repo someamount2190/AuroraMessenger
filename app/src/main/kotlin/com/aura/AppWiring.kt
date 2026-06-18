@@ -8,6 +8,7 @@ import com.aura.reaction.Reactions
 import com.aura.server.RendezvousServerController
 import com.aura.settings.AuroraSettings
 import com.aura.share.ShareShortcuts
+import com.aura.transport.rtc.RtcTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +35,7 @@ class AppWiring @Inject constructor(
     private val reactionManager: Reactions,
     private val callManager: CallController,
     private val shareShortcutManager: ShareShortcuts,
+    private val rtcTransport: RtcTransport,
     private val syncEngine: SyncEngine
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -50,6 +52,9 @@ class AppWiring @Inject constructor(
         disappearingManager.start()
         reactionManager.start()
         callManager.init(scope)
+        // Register the "rtc" data-channel signal handler BEFORE the sync loop starts
+        // draining signals, so an inbound offer that arrives immediately is handled.
+        rtcTransport.init(scope, syncEngine)
         shareShortcutManager.start()
         syncEngine.start()
     }

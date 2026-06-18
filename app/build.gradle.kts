@@ -7,9 +7,10 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-// Release signing config is loaded from keystore.properties at the repo root
-// (keep that file and keystore/*.jks private — they sign every app update).
-val keystorePropsFile = rootProject.file("keystore.properties")
+// Release signing config is loaded from keystore.properties in the consolidated
+// ../keys folder (a sibling of this repo, kept out of git). It and aurora-release.jks
+// sign every app update — keep them private. A clone without ../keys just builds unsigned.
+val keystorePropsFile = rootProject.file("../keys/keystore.properties")
 val keystoreProps = Properties().apply {
     if (keystorePropsFile.exists()) load(keystorePropsFile.inputStream())
 }
@@ -22,8 +23,8 @@ android {
         applicationId = "com.aura"
         minSdk        = 29
         targetSdk     = 34
-        versionCode   = 4
-        versionName   = "0.2.2"
+        versionCode   = 5
+        versionName   = "0.2.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
