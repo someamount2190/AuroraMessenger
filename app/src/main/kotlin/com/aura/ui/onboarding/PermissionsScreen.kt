@@ -1,7 +1,9 @@
 package com.aura.ui.onboarding
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -96,7 +98,7 @@ private val PERMISSION_SPECS: List<PermSpec> = listOf(
             "call, or someone asking to connect. Without this, requests and messages arrive " +
             "silently and you can miss them entirely (including a contact's pairing request).",
         kind = PermKind.RUNTIME,
-        permission = android.Manifest.permission.POST_NOTIFICATIONS,
+        permission = Manifest.permission.POST_NOTIFICATIONS,
         minSdk = Build.VERSION_CODES.TIRAMISU
     ),
     PermSpec(
@@ -118,7 +120,7 @@ private val PERMISSION_SPECS: List<PermSpec> = listOf(
             "You can skip this now; Aurora will ask the first time you record or call.",
         kind = PermKind.RUNTIME,
         required = false,
-        permission = android.Manifest.permission.RECORD_AUDIO
+        permission = Manifest.permission.RECORD_AUDIO
     ),
     PermSpec(
         id = "camera",
@@ -129,7 +131,7 @@ private val PERMISSION_SPECS: List<PermSpec> = listOf(
             "ask the first time you scan a code or start a video call.",
         kind = PermKind.RUNTIME,
         required = false,
-        permission = android.Manifest.permission.CAMERA
+        permission = Manifest.permission.CAMERA
     ),
     PermSpec(
         id = "gallery",
@@ -145,9 +147,12 @@ private val PERMISSION_SPECS: List<PermSpec> = listOf(
 
 private fun isGranted(context: Context, spec: PermSpec): Boolean = when (spec.kind) {
     PermKind.RUNTIME -> {
-        if (Build.VERSION.SDK_INT < spec.minSdk) true
-        else ContextCompat.checkSelfPermission(context, spec.permission!!) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
+        val perm = spec.permission
+        when {
+            Build.VERSION.SDK_INT < spec.minSdk -> true   // not runtime-prompted on this OS
+            perm == null -> true                          // misconfigured RUNTIME spec — treat as granted
+            else -> ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
+        }
     }
     PermKind.BATTERY -> {
         val pm = context.getSystemService(PowerManager::class.java)

@@ -15,6 +15,64 @@ that today's public-key cryptography will remain unbroken.
 > physical devices to fully validate, owing to emulator networking constraints
 > (shared ICE candidates, QR camera) rather than implementation gaps.
 
+## For auditors & security researchers
+
+Aurora is being prepared for independent review. Start here:
+
+| Document | Covers |
+|---|---|
+| [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability; scope; safe harbor |
+| [`docs/AUDIT_SCOPE.md`](docs/AUDIT_SCOPE.md) | Scope, assumptions, known limitations, residual risks |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Components, trust boundaries, diagrams |
+| [`docs/CRYPTO_SPEC.md`](docs/CRYPTO_SPEC.md) | Primitives, formats, handshake, ratchet, SAS |
+| [`docs/PROTOCOL_RENDEZVOUS.md`](docs/PROTOCOL_RENDEZVOUS.md) | Rendezvous wire protocol |
+| [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) | STRIDE + LINDDUN threat model |
+| [`docs/KEY_MANAGEMENT.md`](docs/KEY_MANAGEMENT.md) · [`docs/DATA_AT_REST.md`](docs/DATA_AT_REST.md) | Key lifecycle & at-rest data |
+| [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md) · [`docs/BUILD_REPRODUCIBILITY.md`](docs/BUILD_REPRODUCIBILITY.md) | Supply chain & build |
+| [`docs/TEST_ARCHITECTURE.md`](docs/TEST_ARCHITECTURE.md) · [`docs/TEST_STATUS.md`](docs/TEST_STATUS.md) | Test strategy & status |
+
+> Some `docs/` files are being authored in phases; each states its status at the top. Pin
+> any review to a specific tag (e.g. `v0.2.2-pre`) so findings map to exact source.
+
+### Cryptographic primitives
+
+| Purpose | Algorithms | Parameters | Provided by |
+|---|---|---|---|
+| KEM (key agreement) | Kyber-1024 (ML-KEM) + X25519 | NIST L5 + Curve25519 | liboqs-java · Bouncy Castle |
+| Signatures | Dilithium-3 (ML-DSA) + Ed25519 | NIST L3 + Ed25519 | liboqs-java · Bouncy Castle |
+| AEAD | XChaCha20-Poly1305 | 256-bit key, 192-bit nonce | Bouncy Castle |
+| KDF / hash | HKDF-SHA3-256, SHA3-256 | — | Bouncy Castle |
+| Password KDF (backups) | Argon2id | — | Bouncy Castle |
+| Database at rest | SQLCipher (AES-256) | — | SQLCipher |
+
+Exact versions are in [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md); precise formats and KDF
+labels are in [`docs/CRYPTO_SPEC.md`](docs/CRYPTO_SPEC.md).
+
+### Security claims vs explicit non-claims
+
+**Aurora aims to guarantee:**
+- **Content confidentiality, end to end** — content is sealed with a hybrid of post-quantum
+  and classical primitives; no server (rendezvous included) can read it.
+- **Authenticity & integrity** — messages are hybrid-signed and AEAD-protected.
+- **Forward secrecy** — a per-message symmetric ratchet plus a forward-secret PQXDH handshake;
+  traffic recorded today stays unreadable even if a long-term key is stolen later.
+- **MITM-resistant pairing** — mutual SAS verification fails closed if anyone is in the middle.
+- **Identity binding** — `nodeId = SHA3-256(keys)`; no impersonation via substitute keys.
+- **Post-quantum resistance** — an attacker must break *both* the PQ and the classical primitive.
+- **Metadata minimization** — no account/phone number; in-memory, no-log rendezvous; decoy candidates.
+- **At-rest protection** — SQLCipher DB + Keystore-backed master key; instant cryptographic erase.
+
+**Aurora does NOT (yet) claim:**
+- **Post-compromise "healing"** — a session rests on one root secret; recovery after key compromise is future work.
+- **Endpoint security** — a compromised/rooted/malware device defeats E2E.
+- **Anonymity / unobservability** — it hides content and identities, not that you use Aurora or your IP from the rendezvous; no traffic-analysis resistance in the default path.
+- **Availability** — the free single rendezvous offers no DoS guarantees.
+- **Groups / multi-device** — strictly two-party, one device per identity.
+- **An independent audit** — none has been performed yet.
+
+Full reasoning and residual risks: [`docs/AUDIT_SCOPE.md`](docs/AUDIT_SCOPE.md) and
+[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md).
+
 ## Why it's different
 
 - **Hybrid post-quantum cryptography.** Every key exchange combines **Kyber-1024**
@@ -78,15 +136,16 @@ verification**:
 Identity is `nodeId = SHA3-256(kemPublicKey ‖ signingPublicKey)`, so a node cannot be
 impersonated by substituting keys.
 
-### One-scan host onboarding
+### LAN host-beacon (dormant)
 
-Add Contact → **Host & show my code** turns the initiator into the rendezvous beacon:
-it embeds an ordered list of reachable rendezvous URLs in the QR. The other person
-scans once: their app probes the candidates, adopts the first that responds, and
-pairs with no manual server setup. A reachability banner tells the host how far
-they're reachable (Same Wi-Fi instantly; Internet only when the router maps a port,
-which the app attempts via NAT-PMP automatically, falling back to a hosted rendezvous
-server on carrier-grade NAT).
+The codebase contains a serverless **host-beacon** mode (`host=true`): the initiator runs the
+embeddable in-app rendezvous server and embeds reachable LAN / port-mapped URLs in the QR for
+same-Wi-Fi pairing (probing candidates, NAT-PMP port mapping, reachability banner). **This
+path is not currently reachable from the shipped UI** — the only "Show my code" in the app is
+the plain code that pairs via the shared rendezvous, which works across networks. The beacon
+remains available only as a developer/testing option. It was scaffolding from before the
+hosted rendezvous existed; see [`docs/AUDIT_SCOPE.md`](docs/AUDIT_SCOPE.md) for the
+reconciliation note.
 
 ## Networking model
 
@@ -102,8 +161,9 @@ server on carrier-grade NAT).
 - **Production server:** the hosted rendezvous service runs behind **TLS with
   certificate pinning** in the app, so interception is blocked even against a rogue
   certificate authority. A dependency-free Node.js implementation lives in
-  `rendezvous-server/`; an embeddable in-app server (`com.aura.server`) is used for
-  local-network / host mode.
+  `rendezvous-server/`; an embeddable in-app server (`com.aura.server`) is available for
+  local-network / host mode (currently exposed only via developer settings — see
+  [`docs/AUDIT_SCOPE.md`](docs/AUDIT_SCOPE.md)).
 
 ## Project layout
 
