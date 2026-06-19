@@ -298,7 +298,9 @@ private fun ServerStatusCard(status: RendezvousServerController.Status.Running) 
                 Text(
                     "${status.localIp}:${status.port}  •  ${status.nodeCount} node(s)  •  up ${formatUptime(uptimeSec)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
         }
@@ -368,6 +370,8 @@ private fun ContactList(
                             style = MaterialTheme.typography.titleSmall,
                             // The sender's row changes design when it has unread: name goes bold.
                             fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
                         if (row.streak >= Streaks.MIN_DISPLAY_DAYS) {

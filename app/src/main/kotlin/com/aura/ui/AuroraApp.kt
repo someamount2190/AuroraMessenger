@@ -225,7 +225,20 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
                     // Cold-start deep links resolved once: a tapped contact shortcut
                     // opens that chat; an inbound share opens the picker; else normal.
                     val oc = openContact
+                    // An active call must win this hand-off. When the Activity is recreated
+                    // while a call is live (returning from the notification, the floating
+                    // bubble, or after the OS reclaimed it in the background), the default
+                    // splash->home navigation would pop the call screen and — if the call
+                    // wasn't explicitly minimized — leave no way back to it. Go straight to
+                    // the call screen instead; a minimized call falls through to home, where
+                    // the ongoing-call bar/bubble provide the way back.
+                    val callInfo = viewModel.callManager.call.value
+                    val callLive = callInfo.state == CallState.INCOMING ||
+                        callInfo.state == CallState.OUTGOING ||
+                        callInfo.state == CallState.CONNECTING ||
+                        callInfo.state == CallState.CONNECTED
                     val dest = when {
+                        callLive && !viewModel.callManager.minimized.value -> Routes.CALL
                         postSplashDestination != Routes.HOME -> postSplashDestination
                         oc != null -> {
                             viewModel.shareIntentBus.consumeOpenContact()

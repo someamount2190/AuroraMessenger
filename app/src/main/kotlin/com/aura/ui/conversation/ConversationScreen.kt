@@ -226,35 +226,47 @@ fun ConversationScreen(
                 title = {
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(contact?.displayName ?: "…")
+                            Text(
+                                contact?.displayName ?: "…",
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
                             if (streak >= Streaks.MIN_DISPLAY_DAYS) {
                                 Spacer(Modifier.width(8.dp))
                                 Text(
                                     "🔥 $streak",
                                     style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1
                                 )
                             }
                         }
+                        // One compact status line under the name. Disappearing timer and P2P
+                        // reachability share it (each on its own when present), each kept to a
+                        // single line so the app bar can't balloon. The full failure guidance
+                        // lives in a banner above the messages, not here.
                         if (currentTimer != DisappearingTimer.OFF) {
                             Text(
                                 "⏱ Disappearing: ${currentTimer.label}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }
-                        // P2P reachability — reflects the live data-channel state and
-                        // surfaces connection failures honestly (WebRTC transport patch).
                         val connText = when (connection) {
-                            RtcState.CONNECTED -> "🔒 Connected · peer-to-peer"
+                            RtcState.CONNECTED -> "🔒 Connected"
                             RtcState.SIGNALING, RtcState.GATHERING, RtcState.CHECKING -> "Connecting…"
-                            RtcState.FAILED -> "Couldn't connect directly — try when one of you is on Wi-Fi"
+                            RtcState.FAILED -> "Not connected directly"
                             RtcState.IDLE -> null
                         }
                         if (connText != null) {
                             Text(
                                 connText,
                                 style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 color = when (connection) {
                                     RtcState.CONNECTED -> MaterialTheme.colorScheme.primary
                                     RtcState.FAILED -> MaterialTheme.colorScheme.error
@@ -320,6 +332,19 @@ fun ConversationScreen(
                 onSubmit = viewModel::submitVerify
             )
           } else {
+            // Honest, full-width guidance when a direct path couldn't be established
+            // (the app-bar status is kept to a terse one-liner). Shown only on failure.
+            if (connection == RtcState.FAILED) {
+                Text(
+                    "Couldn't connect directly — you may both be on mobile data. Messages will go through once one of you is on Wi-Fi.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 LazyColumn(
                     state = listState,
