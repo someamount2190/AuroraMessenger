@@ -34,7 +34,7 @@ Aurora is being prepared for independent review. Start here:
 | [`docs/TEST_ARCHITECTURE.md`](docs/TEST_ARCHITECTURE.md) · [`docs/TEST_STATUS.md`](docs/TEST_STATUS.md) | Test strategy & status |
 
 > Some `docs/` files are being authored in phases; each states its status at the top. Pin
-> any review to a specific tag (e.g. `v0.2.3-pre`) so findings map to exact source.
+> any review to a specific tag (e.g. `v0.2.4-pre`) so findings map to exact source.
 
 ### Cryptographic primitives
 
