@@ -171,6 +171,13 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
         }
     }
 
+    // Call couldn't connect / was lost — tell the user plainly (it otherwise just ended).
+    LaunchedEffect(Unit) {
+        viewModel.callManager.callError.collect { msg ->
+            android.widget.Toast.makeText(appContext, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
     // System share sheet → Aurora (WARM start): a share arrived while the app was
     // already running. The cold-start case is handled in the splash hand-off below.
     // The `route != null` guard avoids the first-composition race where the route

@@ -33,8 +33,9 @@ import javax.inject.Singleton
  * transports for an identical wire frame.
  *
  * STUN is self-hosted (no TURN — the droplet is never in the data path). The residual
- * (both peers symmetric-CGNAT, no IPv6) surfaces as [RtcState.FAILED] for the UI to
- * report honestly; a future ShadowMesh relay candidate slots into the ICE config here.
+ * (both peers symmetric-CGNAT, no IPv6) surfaces as [RtcState.UNREACHABLE] for the UI to
+ * report honestly (distinct from [RtcState.FAILED] = peer never answered / offline); a
+ * future ShadowMesh relay candidate slots into the ICE config here.
  */
 @Singleton
 class RtcTransport @Inject constructor(
@@ -139,10 +140,15 @@ class RtcTransport @Inject constructor(
     }
 
     /**
-     * If a session hasn't reached CONNECTED within the window, surface FAILED so the UI
-     * stops saying "Connecting…" forever and tells the user the truth (a peer that's
-     * offline, or unreachable directly — both symmetric-CGNAT with no IPv6). The session
-     * is left alive: a late successful connect still flips the state back to CONNECTED.
+     * If a session hasn't reached CONNECTED within the window, surface the truth and
+     * **tear the dead session down**. Tearing down (rather than leaving it alive) matters:
+     *  - it stops a stuck PeerConnection from gathering forever in the background, and
+     *  - it lets [connectAsync] actually re-offer later — its guard reads the *session's*
+     *    own ICE state, which would otherwise still read GATHERING/CHECKING and bail.
+     * The terminal state distinguishes the two real failure modes (patch §G): the peer
+     * answered but no direct path formed (UNREACHABLE) vs. it never answered (FAILED ⇒
+     * likely offline). A fresh attempt on the next flush (after the cooldown) can still
+     * connect if conditions change.
      */
     private fun armConnectTimeout(peerNodeIdHex: String) {
         val s = scope ?: return
@@ -150,20 +156,30 @@ class RtcTransport @Inject constructor(
             kotlinx.coroutines.delay(CONNECT_TIMEOUT_MS)
             val session = sessions[peerNodeIdHex] ?: return@launch
             if (session.state != RtcState.CONNECTED) {
-                android.util.Log.i(TAG, "timeout ${peerNodeIdHex.take(8)} (was ${session.state}) -> FAILED")
-                stateFlow(peerNodeIdHex).value = RtcState.FAILED
+                val terminal = if (session.remoteDescriptionApplied) RtcState.UNREACHABLE else RtcState.FAILED
+                android.util.Log.i(TAG, "timeout ${peerNodeIdHex.take(8)} (was ${session.state}) -> $terminal")
+                teardown(peerNodeIdHex)                  // dispose the dead PC + drop from the map
+                stateFlow(peerNodeIdHex).value = terminal // publish honest state (teardown set IDLE)
             }
         }
     }
 
     private fun newSession(peerNodeIdHex: String): RtcDataSession {
         teardown(peerNodeIdHex)   // never leak a previous session for this peer
+        // The listener captures `created` so it can ignore callbacks from a session
+        // we've already replaced/torn down — otherwise a disposing PeerConnection could
+        // publish a stale state (e.g. clobber a terminal UNREACHABLE/FAILED) or signal
+        // ICE for a peer we're no longer talking to. (Nullable var, not lateinit: lateinit
+        // isn't allowed on locals; the closure only reads it after we assign below.)
+        var created: RtcDataSession? = null
+        val isCurrent: () -> Boolean = { sessions[peerNodeIdHex] === created }
         val session = RtcDataSession(
             factory = ensureFactory(),
             iceServers = iceServers,
             scopeProvider = { scope },
             listener = object : RtcDataSession.Listener {
                 override suspend fun onLocalIceCandidate(candidate: IceCandidate) {
+                    if (!isCurrent()) return
                     codec.send(
                         peerNodeIdHex,
                         JSONObject()
@@ -174,12 +190,14 @@ class RtcTransport @Inject constructor(
                     )
                 }
                 override fun onStateChanged(state: RtcState) {
+                    if (!isCurrent()) return
                     android.util.Log.i(TAG, "state ${peerNodeIdHex.take(8)} -> $state")
                     stateFlow(peerNodeIdHex).value = state
                 }
                 override suspend fun onInboundFrame(frame: JSONObject): JSONObject? = tcpServer.processFrame(frame)
             }
         )
+        created = session
         sessions[peerNodeIdHex] = session
         return session
     }

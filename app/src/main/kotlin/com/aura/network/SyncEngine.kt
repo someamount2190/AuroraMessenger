@@ -46,6 +46,7 @@ class SyncEngine @Inject constructor(
     private val settings: AuroraSettings,
     private val messagePulse: MessagePulse,
     private val notifier: Notifier,
+    private val networkMonitor: NetworkMonitor,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     // Process-lifetime scope: the sync loop and TCP server must survive Activity
@@ -55,12 +56,18 @@ class SyncEngine @Inject constructor(
     private var lastCheckinMs = 0L
     // When the current run of undelivered outbound messages began (0 = none pending).
     private var pendingStreakStartMs = 0L
+    // Consecutive parked-wait failures while we believe we're online (server unreachable),
+    // driving exponential backoff. Reset on any server response and whenever we go offline.
+    private var consecutiveFailures = 0
 
     private val _lastCheckinResult = MutableStateFlow<String?>(null)
     val lastCheckinResult: StateFlow<String?> = _lastCheckinResult
 
-    /** Handlers for non-pairing signal types (Phase 7 call signaling registers here). */
-    private val signalHandlers = mutableMapOf<String, suspend (JSONObject) -> Unit>()
+    /** Handlers for non-pairing signal types (Phase 7 call signaling registers here).
+     *  Concurrent because it's written by wiring threads (registerSignalHandler) and read
+     *  by the engine coroutine (tick); registration normally precedes start() but this keeps
+     *  it safe if a handler is ever registered after the loop is running. */
+    private val signalHandlers = java.util.concurrent.ConcurrentHashMap<String, suspend (JSONObject) -> Unit>()
 
     fun registerSignalHandler(type: String, handler: suspend (JSONObject) -> Unit) {
         signalHandlers[type] = handler
@@ -78,6 +85,16 @@ class SyncEngine @Inject constructor(
         }
         job = engineScope.launch {
             while (isActive) {
+                // Offline: don't burn battery on doomed network calls. Park until the OS
+                // reports a network is back (bounded, so a missed callback can't strand us),
+                // then loop fresh. Resets the failure/active-retry counters so a reconnect
+                // starts with prompt attempts rather than mid-backoff.
+                if (!networkMonitor.isOnline()) {
+                    consecutiveFailures = 0
+                    pendingStreakStartMs = 0L
+                    networkMonitor.awaitOnline(OFFLINE_RECHECK_MS)
+                    continue
+                }
                 try {
                     tick()
                 } catch (e: kotlinx.coroutines.CancellationException) {
@@ -128,13 +145,25 @@ class SyncEngine @Inject constructor(
         val result = rendezvousClient.waitForWake(server, identity)
         when {
             result.exceptionOrNull() is DrainUnauthorizedException -> {
-                lastCheckinMs = 0L            // re-check-in next tick, then re-park
+                // The server answered — it just lost our registration. Not a connectivity
+                // failure, so don't back off: re-check-in next tick, then re-park.
+                consecutiveFailures = 0
+                lastCheckinMs = 0L
                 delay(POLL_INTERVAL_MS)
             }
-            result.isFailure -> delay(POLL_INTERVAL_MS)   // network error/timeout — back off
-            // woken → loop straight to tick(); idle/unsupported → small breather so an
-            // older server lacking /wait (immediate 404→false) can't busy-loop.
-            result.getOrDefault(false) == false -> delay(WAKE_IDLE_BREATHER_MS)
+            result.isFailure -> {
+                // We passed the connectivity gate but the server is unreachable (down, DNS,
+                // captive portal) — back off exponentially instead of retrying every ~10s.
+                consecutiveFailures++
+                delay(Backoff.delayMs(consecutiveFailures, POLL_INTERVAL_MS, MAX_BACKOFF_MS))
+            }
+            // Either way the server responded, so the failure streak is over: woken → loop
+            // straight to tick(); idle/unsupported (incl. an older server's immediate 404→
+            // false) → a small breather so it can't busy-loop.
+            else -> {
+                consecutiveFailures = 0
+                if (result.getOrDefault(false) == false) delay(WAKE_IDLE_BREATHER_MS)
+            }
         }
     }
 
@@ -194,6 +223,10 @@ class SyncEngine @Inject constructor(
         const val CHECKIN_INTERVAL_MS = 5 * 60_000L
         /** Breather after an idle long-poll return so an old (no-/wait) server can't spin. */
         const val WAKE_IDLE_BREATHER_MS = 3_000L
+        /** Ceiling for the exponential backoff when online but the server is unreachable. */
+        const val MAX_BACKOFF_MS = 60_000L
+        /** While offline, re-evaluate connectivity at least this often even if no callback fires. */
+        const val OFFLINE_RECHECK_MS = 60_000L
         // Active retry while an outbound message is undelivered: fast for the first
         // minute, slower for the next few, then back to the parked listener.
         const val ACTIVE_RETRY_FAST_MS = 5_000L

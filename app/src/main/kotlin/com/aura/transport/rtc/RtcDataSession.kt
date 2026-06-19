@@ -56,6 +56,10 @@ class RtcDataSession(
     private var channel: DataChannel? = null
 
     @Volatile private var remoteDescSet = false
+    /** True once the peer's offer/answer was applied — i.e. the peer was alive and
+     *  responded. Lets the transport tell "offline" (FAILED) from "answered but no
+     *  direct path" (UNREACHABLE) on a connect timeout. */
+    val remoteDescriptionApplied: Boolean get() = remoteDescSet
     private val pendingRemoteIce = java.util.Collections.synchronizedList(ArrayList<IceCandidate>())
     private val disposed = AtomicBoolean(true)
 
@@ -89,11 +93,20 @@ class RtcDataSession(
                 scopeProvider()?.launch {
                     when (s) {
                         PeerConnection.IceConnectionState.CHECKING -> setState(RtcState.CHECKING)
+                        // ICE connectivity is necessary but NOT sufficient to send — the SCTP
+                        // data channel opens slightly later. So CONNECTED is driven *only* by the
+                        // channel reaching OPEN (see attachChannel), keeping "🔒 Connected" honest:
+                        // it means you can actually send right now. Until then we stay CHECKING.
                         PeerConnection.IceConnectionState.CONNECTED,
-                        PeerConnection.IceConnectionState.COMPLETED -> setState(RtcState.CONNECTED)
-                        PeerConnection.IceConnectionState.FAILED,
-                        PeerConnection.IceConnectionState.DISCONNECTED,
-                        PeerConnection.IceConnectionState.CLOSED -> setState(RtcState.FAILED)
+                        PeerConnection.IceConnectionState.COMPLETED -> setState(RtcState.CHECKING)
+                        // DISCONNECTED is usually a transient blip; with continual gathering
+                        // WebRTC keeps trying and can recover, so show "Connecting…" (CHECKING)
+                        // rather than flashing a failure banner mid-conversation.
+                        PeerConnection.IceConnectionState.DISCONNECTED -> setState(RtcState.CHECKING)
+                        // A hard ICE failure means checks ran but no candidate pair worked —
+                        // that's UNREACHABLE (direct path impossible), not "offline" (FAILED).
+                        // CLOSED is driven by our own dispose(), so it's not surfaced here.
+                        PeerConnection.IceConnectionState.FAILED -> setState(RtcState.UNREACHABLE)
                         else -> {}
                     }
                 }
@@ -120,6 +133,10 @@ class RtcDataSession(
                 handleInbound(data)
             }
         })
+        // A channel handed to the responder via onDataChannel may already be OPEN, in which
+        // case onStateChange won't fire again — so reflect the live state immediately. This
+        // is what makes it safe to drive CONNECTED solely from the channel (not from ICE).
+        if (dc.state() == DataChannel.State.OPEN) scopeProvider()?.launch { setState(RtcState.CONNECTED) }
     }
 
     private fun handleInbound(data: ByteArray) {

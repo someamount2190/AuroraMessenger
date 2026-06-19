@@ -46,8 +46,11 @@ class RtcSignalCodec @Inject constructor(
             .put("to", peerNodeIdHex)
             .put("n", sealed.n)
             .put("sealed", Base64.encodeToString(sealed.bytes, Base64.NO_WRAP))
-        rendezvousClient.postSignal(settings.serverAddress.value, peerNodeIdHex, payload.toString())
-        return true
+        // Surface a failed post so RtcTransport can tear the half-open session down and
+        // retry, instead of treating an unsent offer/answer/ICE as delivered.
+        val posted = rendezvousClient.postSignal(settings.serverAddress.value, peerNodeIdHex, payload.toString())
+        posted.onFailure { android.util.Log.w("AuroraRtc", "signal post failed (${inner.optString("kind")}): ${it.message}") }
+        return posted.isSuccess
     }
 
     /** Verify, decrypt and parse an inbound `rtc` signal; null if not for us / tampered. */

@@ -258,7 +258,8 @@ fun ConversationScreen(
                         val connText = when (connection) {
                             RtcState.CONNECTED -> "🔒 Connected"
                             RtcState.SIGNALING, RtcState.GATHERING, RtcState.CHECKING -> "Connecting…"
-                            RtcState.FAILED -> "Not connected directly"
+                            RtcState.UNREACHABLE -> "Not connected directly"
+                            RtcState.FAILED -> "Offline"
                             RtcState.IDLE -> null
                         }
                         if (connText != null) {
@@ -269,7 +270,7 @@ fun ConversationScreen(
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 color = when (connection) {
                                     RtcState.CONNECTED -> MaterialTheme.colorScheme.primary
-                                    RtcState.FAILED -> MaterialTheme.colorScheme.error
+                                    RtcState.FAILED, RtcState.UNREACHABLE -> MaterialTheme.colorScheme.error
                                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                                 }
                             )
@@ -333,10 +334,19 @@ fun ConversationScreen(
             )
           } else {
             // Honest, full-width guidance when a direct path couldn't be established
-            // (the app-bar status is kept to a terse one-liner). Shown only on failure.
-            if (connection == RtcState.FAILED) {
+            // (the app-bar status is kept to a terse one-liner). The two failure modes
+            // get different copy (patch §G): UNREACHABLE = both reachable on the network
+            // but no direct path (likely mobile data); FAILED = the peer never answered.
+            val failureBanner = when (connection) {
+                RtcState.UNREACHABLE ->
+                    "Couldn't connect directly — you may both be on mobile data. Messages will go through once one of you is on Wi-Fi."
+                RtcState.FAILED ->
+                    "Couldn't reach them — they may be offline. Your messages will send automatically once you're both online."
+                else -> null
+            }
+            if (failureBanner != null) {
                 Text(
-                    "Couldn't connect directly — you may both be on mobile data. Messages will go through once one of you is on Wi-Fi.",
+                    failureBanner,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier

@@ -45,7 +45,10 @@ class WebRtcSession(
     interface Listener {
         suspend fun onLocalIceCandidate(candidate: IceCandidate)
         fun onConnected()
-        fun onClosed()
+        /** ICE dropped but may still recover on its own — don't tear down yet. */
+        fun onDisconnected()
+        /** ICE failed/closed — recovery (ICE restart) or termination is the controller's call. */
+        fun onFailed()
     }
 
     val eglBase: EglBase by lazy { EglBase.create() }
@@ -107,17 +110,24 @@ class WebRtcSession(
     fun create() {
         ensureFactory()
         val iceServers = listOf(
-            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+            // Self-hosted STUN (coturn on the rendezvous droplet, dual-stack, STUN-only) —
+            // matches the data transport and keeps Google out of call setup.
+            PeerConnection.IceServer.builder("stun:api.auroramessenger.com:3478").createIceServer()
         )
         val config = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            // Keep gathering candidates across the call so a network change (Wi-Fi<->cellular)
+            // surfaces fresh local candidates that ICE can switch to / restart onto.
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
+        android.util.Log.i("AuroraCall", "PC create: iceServers=${iceServers.flatMap { it.urls }}")
         disposed.set(false)   // a live peer connection now exists to tear down exactly once
         peerConnection = factory?.createPeerConnection(config, object : SimplePcObserver() {
             override fun onIceCandidate(candidate: IceCandidate) {
                 scopeProvider()?.launch { listener.onLocalIceCandidate(candidate) }
             }
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
+                android.util.Log.i("AuroraCall", "ICE -> $state")
                 // CRITICAL: WebRTC delivers callbacks on its native signaling thread via JNI.
                 // A Java exception escaping here aborts the process (RTC_CHECK(!ExceptionCheck())).
                 // Never touch app state inline — hop onto the app scope where exceptions stay
@@ -126,8 +136,12 @@ class WebRtcSession(
                     when (state) {
                         PeerConnection.IceConnectionState.CONNECTED,
                         PeerConnection.IceConnectionState.COMPLETED -> listener.onConnected()
-                        PeerConnection.IceConnectionState.DISCONNECTED,
-                        PeerConnection.IceConnectionState.FAILED -> listener.onClosed()
+                        PeerConnection.IceConnectionState.DISCONNECTED -> listener.onDisconnected()
+                        PeerConnection.IceConnectionState.FAILED -> listener.onFailed()
+                        // CLOSED is reached only via our own dispose() during teardown, so it
+                        // must NOT be surfaced as a failure: doing so raced endCall()'s state
+                        // update and spuriously triggered an ICE restart on the disposed
+                        // session. (Same rule as the data path's RtcDataSession.)
                         else -> {}
                     }
                 }
@@ -151,15 +165,28 @@ class WebRtcSession(
 
         // Video (front camera) — skipped entirely for a voice-only call.
         if (!video) return
-        val capturer = createCameraCapturer() ?: return
+        val capturer = createCameraCapturer() ?: run {
+            android.util.Log.w("AuroraCall", "no camera capturer — video track skipped")
+            return
+        }
         videoCapturer = capturer
         surfaceHelper = SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
         val src = f.createVideoSource(capturer.isScreencast).also { videoSource = it }
         capturer.initialize(surfaceHelper, context, src.capturerObserver)
-        capturer.startCapture(1280, 720, 30)
-        localVideoTrack = f.createVideoTrack("video0", src).apply { setEnabled(true) }
-        _localVideo.value = localVideoTrack
-        peerConnection?.addTrack(localVideoTrack)
+        val track = f.createVideoTrack("video0", src).apply { setEnabled(true) }
+        localVideoTrack = track
+        _localVideo.value = track
+        peerConnection?.addTrack(track)
+        // Start the camera OFF the call-setup critical path. createOffer only needs the
+        // track present (for the SDP m-line), not live frames — opening the camera (~0.5s)
+        // must not delay the offer/ring. Capture starts in parallel; frames flow into the
+        // already-added track once the camera is ready.
+        scopeProvider()?.launch {
+            val camT0 = System.currentTimeMillis()
+            runCatching { capturer.startCapture(1280, 720, 30) }
+                .onSuccess { android.util.Log.i("AuroraCall", "camera started (+${System.currentTimeMillis() - camT0}ms, async)") }
+                .onFailure { android.util.Log.w("AuroraCall", "camera start failed: ${it.message}") }
+        }
     }
 
     private fun createCameraCapturer(): VideoCapturer? {
@@ -185,6 +212,17 @@ class WebRtcSession(
 
     suspend fun createAnswer(): SessionDescription = suspendSdp { obs ->
         peerConnection?.createAnswer(obs, MediaConstraints())
+    }
+
+    /**
+     * Create an offer that forces a fresh ICE gathering (new ufrag/pwd) so a dropped
+     * connection can re-establish over a new network path. Used by [CallController] to
+     * recover a call after a network change rather than dropping it.
+     */
+    suspend fun createRestartOffer(): SessionDescription = suspendSdp { obs ->
+        peerConnection?.createOffer(obs, MediaConstraints().apply {
+            mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true"))
+        })
     }
 
     fun setLocalDescription(sdp: SessionDescription) {

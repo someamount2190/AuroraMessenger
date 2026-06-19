@@ -47,8 +47,12 @@ class CallSignalCodec @Inject constructor(
             .put("to", peerNodeIdHex)
             .put("n", sealed.n)
             .put("sealed", Base64.encodeToString(sealed.bytes, Base64.NO_WRAP))
-        rendezvousClient.postSignal(settings.serverAddress.value, peerNodeIdHex, payload.toString())
-        return true
+        // Surface a failed post (the offer/answer/ICE never reached the queue) so callers
+        // can react instead of assuming it was sent — a dropped ICE candidate quietly
+        // prevents the connection, and a dropped offer means the peer never rings.
+        val posted = rendezvousClient.postSignal(settings.serverAddress.value, peerNodeIdHex, payload.toString())
+        posted.onFailure { android.util.Log.w("AuroraCall", "signal post failed (${inner.optString("kind")}): ${it.message}") }
+        return posted.isSuccess
     }
 
     /**
