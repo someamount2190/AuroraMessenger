@@ -51,6 +51,14 @@ class RtcTransport @Inject constructor(
     private val states = ConcurrentHashMap<String, MutableStateFlow<RtcState>>()
     private val lastAttemptMs = ConcurrentHashMap<String, Long>()
 
+    /**
+     * Stores a fully-reassembled inbound media blob and returns the ack frame (or null).
+     * Registered by [com.aura.media.MediaTransfer] — the media twin of
+     * [TcpMessageServer]'s mediaHandler, transport-agnostic so the same store/ack logic
+     * serves both the data channel and the TCP socket.
+     */
+    var mediaHandler: (suspend (meta: JSONObject, sealed: ByteArray) -> JSONObject?)? = null
+
     private val iceServers = listOf(
         // Self-hosted STUN (coturn on the rendezvous droplet, STUN-only, dual-stack).
         // Resolves directly to the droplet, so it bypasses any HTTP proxy. No TURN.
@@ -102,6 +110,16 @@ class RtcTransport @Inject constructor(
         val session = sessions[peerNodeIdHex] ?: return null
         if (session.state != RtcState.CONNECTED) return null
         return session.send(frame, SEND_ACK_TIMEOUT_MS)
+    }
+
+    /**
+     * Stream a sealed media blob over the open data channel (the same NAT-traversing path as
+     * messages and calls) and await the single final ack; null if no session is connected.
+     */
+    suspend fun sendMedia(peerNodeIdHex: String, startFrame: JSONObject, sealedBytes: ByteArray): JSONObject? {
+        val session = sessions[peerNodeIdHex] ?: return null
+        if (session.state != RtcState.CONNECTED) return null
+        return session.sendMedia(startFrame, sealedBytes, RtcMediaChunking.CHUNK_BYTES, MEDIA_ACK_TIMEOUT_MS)
     }
 
     // ── Signaling ────────────────────────────────────────────────────────────
@@ -195,6 +213,8 @@ class RtcTransport @Inject constructor(
                     stateFlow(peerNodeIdHex).value = state
                 }
                 override suspend fun onInboundFrame(frame: JSONObject): JSONObject? = tcpServer.processFrame(frame)
+                override suspend fun onInboundMedia(meta: JSONObject, sealed: ByteArray): JSONObject? =
+                    mediaHandler?.invoke(meta, sealed)
             }
         )
         created = session
@@ -223,6 +243,8 @@ class RtcTransport @Inject constructor(
     private companion object {
         const val TAG = "AuroraRtc"
         const val SEND_ACK_TIMEOUT_MS = 10_000L
+        /** Media ack waits longer than a text ack: the receiver writes the blob to disk first. */
+        const val MEDIA_ACK_TIMEOUT_MS = 30_000L
         /** Flip a stalled connection to FAILED after this long so the UI reports honestly. */
         const val CONNECT_TIMEOUT_MS = 25_000L
         /** Don't re-offer the same peer more often than this (avoids flush-retry churn). */

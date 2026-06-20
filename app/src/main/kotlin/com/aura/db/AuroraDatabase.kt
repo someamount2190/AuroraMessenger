@@ -280,8 +280,15 @@ interface MessageDao {
     @Query("SELECT timestampMs FROM messages WHERE contactNodeIdHex = :contactNodeIdHex AND timestampMs >= :sinceMs")
     suspend fun messageTimestamps(contactNodeIdHex: String, sinceMs: Long): List<Long>
 
-    @Query("SELECT * FROM messages WHERE fromMe = 1 AND status = 'pending' AND contactNodeIdHex = :contactNodeIdHex ORDER BY timestampMs ASC")
+    // Text only: this drives the MessageSender "msg"-frame path. Media rows have their own
+    // chunked transport (MediaTransfer) — sending one here would deliver the "📷 Photo"
+    // label as a text message and never carry the blob.
+    @Query("SELECT * FROM messages WHERE fromMe = 1 AND status = 'pending' AND type = 'text' AND contactNodeIdHex = :contactNodeIdHex ORDER BY timestampMs ASC")
     suspend fun pendingForContact(contactNodeIdHex: String): List<MessageEntity>
+
+    /** Pending outbound media (photo/video/voice), retried by MediaTransfer.flushPendingMedia. */
+    @Query("SELECT * FROM messages WHERE fromMe = 1 AND status = 'pending' AND type IN ('image', 'video', 'audio') ORDER BY timestampMs ASC")
+    suspend fun pendingMedia(): List<MessageEntity>
 
     @Query("SELECT DISTINCT contactNodeIdHex FROM messages WHERE fromMe = 1 AND status = 'pending'")
     suspend fun contactsWithPending(): List<String>

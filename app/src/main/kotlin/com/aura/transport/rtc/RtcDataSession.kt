@@ -2,8 +2,10 @@ package com.aura.transport.rtc
 
 import com.aura.call.SimplePcObserver
 import com.aura.call.SimpleSdpObserver
+import com.aura.media.EncryptedMediaStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -47,6 +49,8 @@ class RtcDataSession(
         fun onStateChanged(state: RtcState)
         /** Process an inbound request frame (msg/ctl); return an ack frame to send back, or null. */
         suspend fun onInboundFrame(frame: JSONObject): JSONObject?
+        /** Store a fully-reassembled inbound media blob; return the ack frame, or null. */
+        suspend fun onInboundMedia(meta: JSONObject, sealed: ByteArray): JSONObject?
     }
 
     @Volatile var state: RtcState = RtcState.IDLE
@@ -65,6 +69,9 @@ class RtcDataSession(
 
     // Outstanding sends awaiting an ack, keyed by frame "id".
     private val pendingAcks = ConcurrentHashMap<String, CompletableDeferred<JSONObject>>()
+
+    // Inbound media reassembly (id-keyed); fed in order from onMessage.
+    private val mediaReassembler = RtcMediaReassembler(EncryptedMediaStore.MAX_MEDIA_BYTES)
 
     private fun setState(s: RtcState) {
         if (state == s) return
@@ -141,14 +148,25 @@ class RtcDataSession(
 
     private fun handleInbound(data: ByteArray) {
         val frame = try { JSONObject(String(data, StandardCharsets.UTF_8)) } catch (e: Exception) { return }
-        if (frame.optString("t") == "ack") {
-            pendingAcks.remove(frame.optString("id"))?.complete(frame)
-            return
-        }
-        // A request from the peer (msg/ctl): process and send the ack back over the channel.
-        scopeProvider()?.launch {
-            val ack = listener.onInboundFrame(frame) ?: return@launch
-            writeRaw(ack)
+        when (frame.optString("t")) {
+            // Delivery receipt for one of our outstanding sends (msg or media).
+            "ack" -> pendingAcks.remove(frame.optString("id"))?.complete(frame)
+            // Streamed media: accumulate cheaply in arrival order on this (network) thread;
+            // defer the heavy Base64 decode + store to the app scope once the last chunk lands.
+            "media" -> mediaReassembler.begin(frame)
+            "mediachunk" -> {
+                val done = mediaReassembler.chunk(frame) ?: return
+                scopeProvider()?.launch {
+                    val sealed = RtcMediaReassembler.assemble(done.parts)
+                    val ack = listener.onInboundMedia(done.meta, sealed) ?: return@launch
+                    writeRaw(ack)
+                }
+            }
+            // A request from the peer (msg/ctl): process and send the ack back over the channel.
+            else -> scopeProvider()?.launch {
+                val ack = listener.onInboundFrame(frame) ?: return@launch
+                writeRaw(ack)
+            }
         }
     }
 
@@ -177,6 +195,42 @@ class RtcDataSession(
             val bytes = frame.toString().toByteArray(StandardCharsets.UTF_8)
             ch.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false))
         } catch (e: Exception) { false }
+    }
+
+    /**
+     * Stream a sealed media blob: a "media" start frame followed by id-tagged "mediachunk"
+     * frames, then await the single final ack (correlated by [startFrame]'s `id`, the message
+     * id). Splitting into small frames keeps each data-channel message under the SCTP
+     * max-message-size; [bufferedAmount] backpressure stops a large blob from outrunning the
+     * send buffer (which would drop messages or close the channel). Returns the ack frame, or
+     * null if the channel isn't open / a write fails / the ack times out.
+     */
+    suspend fun sendMedia(startFrame: JSONObject, sealedBytes: ByteArray, chunkBytes: Int, timeoutMs: Long): JSONObject? {
+        val ch = channel ?: return null
+        if (ch.state() != DataChannel.State.OPEN) return null
+        val id = startFrame.optString("id")
+        if (id.isEmpty()) return null
+        startFrame.put("chunks", RtcMediaChunking.chunkCount(sealedBytes.size, chunkBytes))
+        val deferred = CompletableDeferred<JSONObject>()
+        pendingAcks[id] = deferred
+        return try {
+            if (!writeRaw(startFrame)) return null
+            var off = 0
+            var i = 0
+            while (off < sealedBytes.size) {
+                // Flow control: wait out the SCTP send buffer before queueing more.
+                while ((channel?.bufferedAmount() ?: return null) > MAX_BUFFERED_BYTES) {
+                    if (channel?.state() != DataChannel.State.OPEN) return null
+                    delay(BACKPRESSURE_POLL_MS)
+                }
+                val end = minOf(off + chunkBytes, sealedBytes.size)
+                if (!writeRaw(RtcMediaChunking.chunkFrame(id, i, sealedBytes, off, end))) return null
+                off = end; i++
+            }
+            withTimeoutOrNull(timeoutMs) { deferred.await() }
+        } finally {
+            pendingAcks.remove(id)
+        }
     }
 
     // ── SDP / ICE (same shape as WebRtcSession) ──────────────────────────────
@@ -228,7 +282,15 @@ class RtcDataSession(
         }
         pendingAcks.values.forEach { it.cancel() }
         pendingAcks.clear()
+        mediaReassembler.clear()
         remoteDescSet = false
         pendingRemoteIce.clear()
+    }
+
+    private companion object {
+        /** Pause media streaming while the SCTP send buffer holds more than this (bytes). */
+        const val MAX_BUFFERED_BYTES = 1L * 1024 * 1024
+        /** Re-check the send buffer this often while backpressured. */
+        const val BACKPRESSURE_POLL_MS = 16L
     }
 }

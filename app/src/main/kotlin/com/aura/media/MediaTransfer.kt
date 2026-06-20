@@ -12,6 +12,7 @@ import com.aura.identity.IdentityStore
 import com.aura.transport.MessageSender
 import com.aura.transport.TcpMessageServer
 import com.aura.transport.WireFrames
+import com.aura.transport.rtc.RtcTransport
 import com.aura.ux.MessagePulse
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.aura.di.IoDispatcher
@@ -19,6 +20,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.Socket
@@ -45,17 +48,26 @@ class MediaTransfer @Inject constructor(
     private val mediaStore: EncryptedMediaStore,
     private val messageSender: MessageSender,
     private val tcpServer: TcpMessageServer,
+    private val rtcTransport: RtcTransport,
     private val messagePulse: MessagePulse,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private val _progress = MutableStateFlow<Map<String, Float>>(emptyMap())
     val progress: StateFlow<Map<String, Float>> = _progress
 
-    /** Register inbound media handling on the TCP server (called once at startup). */
+    // Serializes the background retry sweep; the per-id [inFlight] set stops a retry from
+    // racing the original inline send (or another sweep) into a double delivery.
+    private val flushMutex = Mutex()
+    private val inFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** Register inbound media handling on both transports (called once at startup). */
     fun wireReceiver() {
+        // TCP: drain the streamed chunks off the socket, then store + ack.
         tcpServer.mediaHandler = handler@{ frame, socket ->
-            handleIncoming(frame, socket)
+            handleIncomingTcp(frame, socket)
         }
+        // RTC: the data session reassembles the blob; we just store + ack.
+        rtcTransport.mediaHandler = { meta, sealed -> storeIncomingMedia(meta, sealed) }
     }
 
     /** Pick → seal → store → send a gallery image/video. Returns the new message id. */
@@ -102,10 +114,47 @@ class MediaTransfer @Inject constructor(
         )
         setProgress(messageId, 0.2f)
 
-        val delivered = deliverMedia(contactNodeIdHex, messageId, type, plaintext, durationMs)
-        messageDao.setStatus(messageId, if (delivered) "delivered" else "pending")
-        setProgress(messageId, if (delivered) 1f else 0f)
+        attemptDeliver(messageId, contactNodeIdHex, type, plaintext, durationMs)
         return messageId
+    }
+
+    /**
+     * Try to deliver one media message and stamp the result. Guarded by [inFlight] so the
+     * inline send and the background [flushPendingMedia] sweep never deliver the same blob
+     * twice. A failed send leaves the row "pending" for the next sweep to retry (once an RTC
+     * session warms up, a CGNAT peer TCP can't reach becomes reachable).
+     */
+    private suspend fun attemptDeliver(
+        messageId: String,
+        contactNodeIdHex: String,
+        type: String,
+        plaintext: ByteArray,
+        durationMs: Long?
+    ): Boolean {
+        if (!inFlight.add(messageId)) return false   // already being sent elsewhere
+        return try {
+            val delivered = deliverMedia(contactNodeIdHex, messageId, type, plaintext, durationMs)
+            messageDao.setStatus(messageId, if (delivered) "delivered" else "pending")
+            setProgress(messageId, if (delivered) 1f else 0f)
+            delivered
+        } finally {
+            inFlight.remove(messageId)
+        }
+    }
+
+    /**
+     * Retry every still-pending outbound media message. Media isn't queued through
+     * [MessageSender.flushPending] (that path only carries text frames — it would re-send a
+     * photo as the literal "📷 Photo" label), so the sync loop drives this sweep instead. The
+     * sealed wire blob is re-derived from the at-rest file, so nothing large is kept in the DB.
+     */
+    suspend fun flushPendingMedia() = flushMutex.withLock {
+        for (msg in messageDao.pendingMedia()) {
+            val path = msg.mediaPath ?: continue
+            val mediaKey = ratchet.mediaKey(msg.contactNodeIdHex) ?: continue
+            val plaintext = mediaStore.readDecrypted(path, mediaKey) ?: continue
+            attemptDeliver(msg.id, msg.contactNodeIdHex, msg.type, plaintext, msg.durationMs)
+        }
     }
 
     private fun bodyLabel(type: String) = when (type) {
@@ -123,13 +172,12 @@ class MediaTransfer @Inject constructor(
     ): Boolean {
         val identity = identityManager.getOrCreate()
         val contact = contactDao.byNodeId(contactNodeIdHex) ?: return false
-        val address = messageSender.resolvePeerAddress(contact) ?: return false
         // Seal the blob for the wire with a fresh ratchet key (distinct from the
         // at-rest key), so intercepted media gets the same forward secrecy as text.
         val sealed = ratchet.sealNext(contactNodeIdHex, plaintext, MEDIA_WIRE_AAD) ?: return false
 
-        // The sealed bytes are streamed as mediachunk frames by sendMediaChunked, so
-        // the start frame carries only metadata (no blob).
+        // The sealed bytes are streamed as mediachunk frames by the transport, so the start
+        // frame carries only metadata (no blob); each transport stamps its own chunk count.
         val startFrame = JSONObject()
             .put("t", "media")
             .put("from", identity.nodeId.toHex())
@@ -141,12 +189,28 @@ class MediaTransfer @Inject constructor(
             .put("n", sealed.n)
 
         setProgress(messageId, 0.6f)
+
+        // Preferred path: the peer-to-peer WebRTC data channel — the same NAT-traversing
+        // route messages and calls take. Falls back to direct TCP for LAN / reachable peers.
+        if (rtcTransport.isConnected(contactNodeIdHex)) {
+            val ack = rtcTransport.sendMedia(contactNodeIdHex, startFrame, sealed.bytes)
+            if (ack?.optString("t") == "ack" && ack.optString("id") == messageId) return true
+        } else {
+            // Warm an RTC session so the next sweep can use it (a CGNAT peer TCP can't reach).
+            rtcTransport.connectAsync(contactNodeIdHex)
+        }
+
+        val address = messageSender.resolvePeerAddress(contact) ?: return false
         val response = messageSender.sendMediaChunked(address, startFrame, sealed.bytes)
         return response?.optString("t") == "ack" && response.optString("id") == messageId
     }
 
-    /** TCP server callback: store an inbound media blob and ack. */
-    private suspend fun handleIncoming(frame: JSONObject, socket: Socket): Boolean {
+    /**
+     * TCP server callback: drain the streamed chunks off the socket, then store + ack.
+     * (The RTC path reassembles the blob in the data session and calls [storeIncomingMedia]
+     * directly — no socket draining needed.)
+     */
+    private suspend fun handleIncomingTcp(frame: JSONObject, socket: Socket): Boolean {
         val identity = identityManager.getOrCreate()
         val myNodeId = identity.nodeId.toHex()
         val from = frame.optString("from")
@@ -170,24 +234,39 @@ class MediaTransfer @Inject constructor(
             if (buf.size() > EncryptedMediaStore.MAX_MEDIA_BYTES + REASSEMBLY_SLACK) return false
             received++
         }
-        val sealed = buf.toByteArray()
+
+        val ack = storeIncomingMedia(frame, buf.toByteArray()) ?: return false
+        WireFrames.write(socket.getOutputStream(), ack)
+        return true
+    }
+
+    /**
+     * Transport-agnostic: validate, decrypt and persist a fully-reassembled sealed media
+     * blob, returning the ack frame to send back over whichever transport delivered it (the
+     * RTC data channel or the TCP socket), or null if the frame isn't for us / can't be opened.
+     */
+    private suspend fun storeIncomingMedia(meta: JSONObject, sealed: ByteArray): JSONObject? {
+        val identity = identityManager.getOrCreate()
+        val myNodeId = identity.nodeId.toHex()
+        val from = meta.optString("from")
+        if (meta.optString("to") != myNodeId) return null
+        contactDao.byNodeId(from) ?: return null
+
+        val messageId = meta.optString("id")
 
         // Retransmit after a lost ack: already stored → re-ack without decrypting
         // (the ratchet key for this counter is already spent).
         if (messageId.isNotEmpty() && messageDao.byId(messageId) != null) {
-            com.aura.transport.WireFrames.write(
-                socket.getOutputStream(), JSONObject().put("t", "ack").put("id", messageId)
-            )
-            return true
+            return JSONObject().put("t", "ack").put("id", messageId)
         }
 
-        val type = frame.optString("mtype", "image")
-        val n = frame.optLong("n", -1)
-        val duration = if (frame.isNull("duration")) null else frame.optLong("duration")
+        val type = meta.optString("mtype", "image")
+        val n = meta.optLong("n", -1)
+        val duration = if (meta.isNull("duration")) null else meta.optLong("duration")
 
         // Unseal the wire blob, then re-encrypt at rest with the local media key.
-        val plaintext = ratchet.open(from, n, sealed, MEDIA_WIRE_AAD) ?: return false
-        val mediaKey = ratchet.mediaKey(from) ?: return false
+        val plaintext = ratchet.open(from, n, sealed, MEDIA_WIRE_AAD) ?: return null
+        val mediaKey = ratchet.mediaKey(from) ?: return null
         val path = mediaStore.writeEncrypted(messageId, plaintext, mediaKey)
         messageDao.insert(
             MessageEntity(
@@ -195,7 +274,7 @@ class MediaTransfer @Inject constructor(
                 contactNodeIdHex = from,
                 fromMe           = false,
                 body             = bodyLabel(type),
-                timestampMs      = frame.optLong("ts", System.currentTimeMillis()),
+                timestampMs      = meta.optLong("ts", System.currentTimeMillis()),
                 status           = "delivered",
                 type             = type,
                 mediaPath        = path,
@@ -203,12 +282,7 @@ class MediaTransfer @Inject constructor(
             )
         )
         messagePulse.pulse(from)
-
-        com.aura.transport.WireFrames.write(
-            socket.getOutputStream(),
-            JSONObject().put("t", "ack").put("id", messageId)
-        )
-        return true
+        return JSONObject().put("t", "ack").put("id", messageId)
     }
 
     /** Decrypt a stored media file for preview (returns plaintext bytes). */

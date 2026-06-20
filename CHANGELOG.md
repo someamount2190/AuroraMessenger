@@ -8,6 +8,73 @@ line (`0.2.1-pre`) while the design stabilises.
 
 Nothing yet.
 
+## [0.2.6-pre] — 2026-06-21
+
+Photos, videos and voice messages now reach contacts across carrier networks.
+
+### Fixed
+- **Media now travels the peer-to-peer path.** Messages and calls moved onto the WebRTC
+  data channel in 0.2.3 so they cross carrier NAT, but media (photos/videos/voice) was left
+  on the older direct-TCP route, which can't reach a phone behind mobile-carrier NAT — so on
+  mobile data it silently failed to send. Media now prefers the same NAT-traversing data
+  channel and falls back to direct TCP only on a shared network.
+- **A queued photo could be re-sent as a plain "📷 Photo" text.** The message retry loop no
+  longer touches media rows (which carry their own chunked transfer), so an undelivered photo
+  is retried as the actual image, not its caption.
+
+### Added
+- **Media is retried.** An unsent photo/video/voice message is now re-attempted automatically
+  once a direct connection becomes possible, instead of being a one-shot send.
+
+### Internal
+- Media is streamed over the data channel as small reliable chunks with send-buffer
+  backpressure and reassembled per message, sharing one transport-agnostic store-and-ack path
+  with the TCP route.
+
+## [0.2.5-pre] — 2026-06-19
+
+Reliability fixes for connections, calls, and background battery use.
+
+### Fixed
+- **Calls.** An unanswered outgoing call stops ringing on its own instead of showing
+  "Calling…" forever; a second incoming call while you're already on one no longer disrupts
+  the call in progress; ending or declining a call now tears down cleanly.
+- **Connection status.** The chat header distinguishes "couldn't connect directly — you may
+  both be on mobile data" from "they're offline," and a stalled connection reports the real
+  outcome instead of hanging on "Connecting…". A brief network blip no longer flashes a failure.
+- **Battery.** With no network, Aurora waits quietly and resumes the instant connectivity
+  returns, instead of repeatedly reaching for the server in the background.
+
+## [0.2.4-pre] — 2026-06-19
+
+Call-handling fix and UI polish.
+
+### Fixed
+- **Returning to an in-progress call.** Coming back via the app icon, the ongoing-call
+  notification, or the floating bubble now reliably restores the call screen (previously it
+  could land on the home screen with the call still running but out of view).
+
+### Changed
+- The chat-header connection status is a single tidy line; the full "couldn't connect
+  directly" guidance shows as a banner above the conversation. Long contact names and the
+  server-status line truncate cleanly instead of wrapping.
+
+## [0.2.3-pre] — 2026-06-18
+
+Peer-to-peer connections that traverse carrier NAT.
+
+### Added
+- **WebRTC data-channel transport.** Messages connect over a WebRTC data channel (ICE +
+  self-hosted STUN, no relay) so two phones reach each other across mobile / carrier-NAT
+  networks — IPv6 first, falling back to IPv4, with direct TCP as a same-network fast path.
+  The chat header shows the live connection state and reports honestly when a direct path
+  isn't possible.
+
+### Infrastructure
+- **Self-hosted STUN.** A coturn STUN-only service (never a relay) runs on the rendezvous
+  host so devices can discover their public address for hole punching. It never carries
+  message content.
+
 ## [0.2.2-pre] — 2026-06-17
 
 An onboarding patch that makes sure a new install can actually receive messages.

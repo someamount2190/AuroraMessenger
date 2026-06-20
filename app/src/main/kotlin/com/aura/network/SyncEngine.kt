@@ -3,6 +3,7 @@ package com.aura.network
 import com.aura.crypto.PrekeyManager
 import com.aura.crypto.toHex
 import com.aura.identity.IdentityStore
+import com.aura.media.MediaTransfer
 import com.aura.notify.Notifier
 import com.aura.pairing.PairingCoordinator
 import com.aura.settings.AuroraSettings
@@ -42,6 +43,7 @@ class SyncEngine @Inject constructor(
     private val prekeyManager: PrekeyManager,
     private val pairingManager: PairingCoordinator,
     private val messageSender: MessageSender,
+    private val mediaTransfer: MediaTransfer,
     private val tcpServer: TcpMessageServer,
     private val settings: AuroraSettings,
     private val messagePulse: MessagePulse,
@@ -196,6 +198,9 @@ class SyncEngine @Inject constructor(
 
         // Phase 4: push any queued messages (peers that just came online get them now).
         messageSender.flushPending()
+        // Media rides its own chunked transport, so retry pending photos/videos/voice
+        // separately — once an RTC session warms up, a CGNAT peer becomes reachable.
+        mediaTransfer.flushPendingMedia()
 
         // Drain and dispatch signals (signed request — see RendezvousClient.getSignals).
         val signalsResult = rendezvousClient.getSignals(server, identity)
