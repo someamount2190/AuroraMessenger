@@ -113,7 +113,14 @@ data class MessageEntity(
      * and for media (which seals its own blob).
      */
     val sealedB64: String? = null,
-    val ratchetN: Long? = null
+    val ratchetN: Long? = null,
+    /**
+     * Group chat: the group this message belongs to (null = 1:1). For a group message the
+     * conversation key in [contactNodeIdHex] is the groupId, and [senderNodeId] is the author.
+     */
+    val groupId: String? = null,
+    /** For inbound group messages (fromMe = false): who actually sent it. Null for 1:1. */
+    val senderNodeId: String? = null
 )
 
 /**
@@ -192,6 +199,56 @@ data class MeshPeerEntity(
     val port: Int,
     val firstSeenMs: Long,
     val lastSeenMs: Long
+)
+
+/**
+ * Degraded carry relay (group chat, piece 3): an opaque, end-to-end-sealed envelope this device
+ * is holding to deliver to [target] (a co-member of [groupId]) when it next becomes reachable.
+ * [innerJson] is the original sender's `msg` frame addressed to [target] — we ferry it, we can't
+ * read it. Stored encrypted at rest (SQLCipher). See Aurora Instructions/GROUP_DEGRADED_RELAY.md.
+ */
+@Entity(tableName = "carry_queue", primaryKeys = ["msgId", "target"])
+data class CarryEntity(
+    val msgId: String,
+    val target: String,
+    val groupId: String,
+    val originNodeId: String,
+    val innerJson: String,
+    val createdMs: Long,
+    val ttlMs: Long,
+    val attempts: Int,
+    val lastAttemptMs: Long
+)
+
+/** A group conversation (group chat, piece 1). [createdByNodeId] is the admin / source of truth. */
+@Entity(tableName = "groups")
+data class GroupEntity(
+    @PrimaryKey val groupId: String,
+    val name: String,
+    val createdByNodeId: String,
+    val epoch: Long,
+    val createdMs: Long,
+    val active: Boolean
+)
+
+/** One member of a group; [role] is "admin" or "member". */
+@Entity(tableName = "group_members", primaryKeys = ["groupId", "nodeId"])
+data class GroupMemberEntity(
+    val groupId: String,
+    val nodeId: String,
+    val role: String,
+    val addedMs: Long
+)
+
+/** Per-member delivery state for an outbound group message (fan-out tracking). */
+@Entity(tableName = "group_delivery", primaryKeys = ["msgId", "memberNodeId"])
+data class GroupDeliveryEntity(
+    val msgId: String,
+    val groupId: String,
+    val memberNodeId: String,
+    val status: String,          // pending | delivered
+    val sealedB64: String? = null,
+    val ratchetN: Long? = null
 )
 
 // ── DAOs ──────────────────────────────────────────────────────────────────────
@@ -428,21 +485,122 @@ interface MeshPeerDao {
     suspend fun deleteAll()
 }
 
+@Dao
+interface CarryDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: CarryEntity)
+
+    @Query("SELECT DISTINCT target FROM carry_queue")
+    suspend fun targets(): List<String>
+
+    @Query("SELECT * FROM carry_queue WHERE target = :target ORDER BY createdMs ASC")
+    suspend fun forTarget(target: String): List<CarryEntity>
+
+    @Query("DELETE FROM carry_queue WHERE msgId = :msgId AND target = :target")
+    suspend fun delete(msgId: String, target: String)
+
+    @Query("UPDATE carry_queue SET attempts = attempts + 1, lastAttemptMs = :nowMs WHERE msgId = :msgId AND target = :target")
+    suspend fun markAttempt(msgId: String, target: String, nowMs: Long)
+
+    /** GC: drop every envelope past its TTL. */
+    @Query("DELETE FROM carry_queue WHERE createdMs + ttlMs <= :nowMs")
+    suspend fun expireOlderThan(nowMs: Long)
+
+    @Query("SELECT COUNT(*) FROM carry_queue")
+    suspend fun count(): Int
+
+    @Query("SELECT COUNT(*) FROM carry_queue WHERE originNodeId = :origin")
+    suspend fun countFromOrigin(origin: String): Int
+
+    /** Oldest entry, used to evict when the queue hits its cap. */
+    @Query("SELECT * FROM carry_queue ORDER BY createdMs ASC LIMIT 1")
+    suspend fun oldest(): CarryEntity?
+
+    @Query("DELETE FROM carry_queue")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface GroupDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertGroup(group: GroupEntity)
+
+    @Query("SELECT * FROM groups WHERE groupId = :groupId")
+    suspend fun group(groupId: String): GroupEntity?
+
+    @Query("SELECT * FROM groups WHERE active = 1 ORDER BY createdMs DESC")
+    fun observeGroups(): Flow<List<GroupEntity>>
+
+    @Query("SELECT * FROM groups WHERE groupId = :groupId")
+    fun observeGroup(groupId: String): Flow<GroupEntity?>
+
+    @Query("SELECT * FROM group_members WHERE groupId = :groupId")
+    fun observeMembers(groupId: String): Flow<List<GroupMemberEntity>>
+
+    @Query("UPDATE groups SET epoch = :epoch WHERE groupId = :groupId")
+    suspend fun setEpoch(groupId: String, epoch: Long)
+
+    @Query("UPDATE groups SET name = :name WHERE groupId = :groupId")
+    suspend fun setName(groupId: String, name: String)
+
+    @Query("UPDATE groups SET active = :active WHERE groupId = :groupId")
+    suspend fun setActive(groupId: String, active: Boolean)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMember(member: GroupMemberEntity)
+
+    @Query("DELETE FROM group_members WHERE groupId = :groupId AND nodeId = :nodeId")
+    suspend fun removeMember(groupId: String, nodeId: String)
+
+    @Query("SELECT * FROM group_members WHERE groupId = :groupId")
+    suspend fun members(groupId: String): List<GroupMemberEntity>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM group_members WHERE groupId = :groupId AND nodeId = :nodeId)")
+    suspend fun isMember(groupId: String, nodeId: String): Boolean
+
+    @Query("DELETE FROM group_members WHERE groupId = :groupId")
+    suspend fun clearMembers(groupId: String)
+
+    // ── group message fan-out delivery ──
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDelivery(row: GroupDeliveryEntity)
+
+    @Query("SELECT * FROM group_delivery WHERE status = 'pending'")
+    suspend fun pendingDeliveries(): List<GroupDeliveryEntity>
+
+    @Query("UPDATE group_delivery SET status = 'delivered' WHERE msgId = :msgId AND memberNodeId = :member")
+    suspend fun markDelivered(msgId: String, member: String)
+
+    @Query("UPDATE group_delivery SET sealedB64 = :sealedB64, ratchetN = :n WHERE msgId = :msgId AND memberNodeId = :member")
+    suspend fun setDeliverySealed(msgId: String, member: String, sealedB64: String, n: Long)
+
+    @Query("SELECT COUNT(*) FROM group_delivery WHERE msgId = :msgId AND status = 'pending'")
+    suspend fun pendingCount(msgId: String): Int
+}
+
 // ── Database ──────────────────────────────────────────────────────────────────
 
 @Database(
     entities = [
         ContactEntity::class, MessageEntity::class, MeshPeerEntity::class,
-        RatchetStateEntity::class, RatchetSkippedKeyEntity::class, PrekeyEntity::class
+        RatchetStateEntity::class, RatchetSkippedKeyEntity::class, PrekeyEntity::class,
+        CarryEntity::class, GroupEntity::class, GroupMemberEntity::class, GroupDeliveryEntity::class
     ],
-    version = 7,
+    version = 10,
     // Export the schema so version 6 became the migration baseline: from here on,
     // changes ship as @AutoMigration / Migration objects that PRESERVE user data
     // instead of wiping it. (Schema JSONs land in app/schemas — commit them.)
-    // v6→v7 adds the `prekeys` table (forward-secret PQXDH handshake); a purely
-    // additive change, so an automatic migration carries every real user across.
+    // v6→v7 adds `prekeys` (PQXDH handshake); v7→v8 adds `carry_queue` (degraded carry
+    // relay); v8→v9 adds `groups` + `group_members`; v9→v10 adds `group_delivery` and the
+    // groupId/senderNodeId columns on `messages` (group chat fan-out). All purely additive,
+    // so automatic migrations carry every real user across.
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 6, to = 7)]
+    autoMigrations = [
+        AutoMigration(from = 6, to = 7),
+        AutoMigration(from = 7, to = 8),
+        AutoMigration(from = 8, to = 9),
+        AutoMigration(from = 9, to = 10)
+    ]
 )
 abstract class AuroraDatabase : RoomDatabase() {
     abstract fun contactDao(): ContactDao
@@ -450,6 +608,8 @@ abstract class AuroraDatabase : RoomDatabase() {
     abstract fun meshPeerDao(): MeshPeerDao
     abstract fun ratchetDao(): RatchetDao
     abstract fun prekeyDao(): PrekeyDao
+    abstract fun carryDao(): CarryDao
+    abstract fun groupDao(): GroupDao
 
     companion object {
         /** Build the SQLCipher-encrypted database. [dbKey] must be 32 bytes. */

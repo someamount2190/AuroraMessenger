@@ -2,12 +2,14 @@ package com.aura
 
 import com.aura.call.CallController
 import com.aura.disappearing.DisappearingMessages
+import com.aura.group.GroupManager
 import com.aura.media.MediaTransfer
 import com.aura.network.SyncEngine
 import com.aura.reaction.Reactions
 import com.aura.server.RendezvousServerController
 import com.aura.settings.AuroraSettings
 import com.aura.share.ShareShortcuts
+import com.aura.transport.carry.CarryRelay
 import com.aura.transport.rtc.RtcTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,9 +35,11 @@ class AppWiring @Inject constructor(
     private val mediaTransfer: MediaTransfer,
     private val disappearingManager: DisappearingMessages,
     private val reactionManager: Reactions,
+    private val groupManager: GroupManager,
     private val callManager: CallController,
     private val shareShortcutManager: ShareShortcuts,
     private val rtcTransport: RtcTransport,
+    private val carryRelay: CarryRelay,
     private val syncEngine: SyncEngine
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -49,8 +53,10 @@ class AppWiring @Inject constructor(
         if (settings.serverMode.value) serverController.start()
         // Register inbound handlers BEFORE the TCP server starts accepting (syncEngine).
         mediaTransfer.wireReceiver()
+        carryRelay.wireReceiver()
         disappearingManager.start()
         reactionManager.start()
+        groupManager.start()
         callManager.init(scope)
         // Register the "rtc" data-channel signal handler BEFORE the sync loop starts
         // draining signals, so an inbound offer that arrives immediately is handled.

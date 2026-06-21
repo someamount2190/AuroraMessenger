@@ -9,6 +9,7 @@ import com.aura.db.MessageEntity
 import com.aura.identity.IdentityStore
 import com.aura.di.IoDispatcher
 import com.aura.settings.AuroraSettings
+import com.aura.transport.carry.GroupMembershipGate
 import com.aura.ux.MessagePulse
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +40,7 @@ class TcpMessageServer @Inject constructor(
     private val messageDao: MessageDao,
     private val settings: AuroraSettings,
     private val messagePulse: MessagePulse,
+    private val groupGate: GroupMembershipGate,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private var serverSocket: ServerSocket? = null
@@ -52,8 +54,12 @@ class TcpMessageServer @Inject constructor(
     var controlHandler: (suspend (fromNodeIdHex: String, plaintext: JSONObject) -> Unit)? = null
     /** Emoji-reaction control handler (Messenger reactions). */
     var reactionHandler: (suspend (fromNodeIdHex: String, plaintext: JSONObject) -> Unit)? = null
+    /** Group membership control handler (grp_* types — see GroupManager). */
+    var groupControlHandler: (suspend (fromNodeIdHex: String, plaintext: JSONObject) -> Unit)? = null
     /** Phase 5 media frames are routed here. */
     var mediaHandler: (suspend (frame: JSONObject, socket: Socket) -> Boolean)? = null
+    /** Degraded carry-relay frames (group chat) are routed here; returns true if stored. */
+    var carryHandler: (suspend (frame: JSONObject) -> Boolean)? = null
     /** Phase 6: stamp expiry when an incoming message lands. */
     var onMessageStored: (suspend (MessageEntity) -> Unit)? = null
 
@@ -116,6 +122,7 @@ class TcpMessageServer @Inject constructor(
                     "ctl"   -> processCtl(frame)?.let { WireFrames.write(output, it) }
                     "relay" -> handleRelay(frame, output)
                     "media" -> { if (mediaHandler?.invoke(frame, s) != true) break }
+                    "carry" -> { carryHandler?.invoke(frame); WireFrames.write(output, JSONObject().put("t", "carryack")) }
                     else    -> break
                 }
             }
@@ -129,9 +136,10 @@ class TcpMessageServer @Inject constructor(
      * fails). The caller writes the ack over whatever transport delivered the frame.
      */
     suspend fun processFrame(frame: JSONObject): JSONObject? = when (frame.optString("t")) {
-        "msg" -> processMsg(frame)
-        "ctl" -> processCtl(frame)
-        else  -> null
+        "msg"   -> processMsg(frame)
+        "ctl"   -> processCtl(frame)
+        "carry" -> { carryHandler?.invoke(frame); JSONObject().put("t", "carryack") }
+        else    -> null
     }
 
     private suspend fun processMsg(frame: JSONObject): JSONObject? {
@@ -158,9 +166,17 @@ class TcpMessageServer @Inject constructor(
         val plaintext = ratchet.open(from, n, sealed, aad) ?: return null
         val inner = try { JSONObject(String(plaintext, Charsets.UTF_8)) } catch (e: Exception) { return null }
 
+        // Group message: the authenticated groupId rides inside the sealed payload. Accept it only
+        // for a group we belong to, from a genuine co-member; the conversation key is the groupId.
+        val groupId = inner.optString("groupId").ifEmpty { null }
+        if (groupId != null && (!groupGate.isMemberOf(groupId) || !groupGate.areCoMembers(groupId, from))) {
+            return null
+        }
+        val conversationKey = groupId ?: from
+
         val entity = MessageEntity(
             id               = frame.optString("id"),
-            contactNodeIdHex = from,
+            contactNodeIdHex = conversationKey,
             fromMe           = false,
             body             = inner.optString("body"),
             timestampMs      = frame.optLong("ts", System.currentTimeMillis()),
@@ -169,11 +185,13 @@ class TcpMessageServer @Inject constructor(
             mediaPath        = null,
             replyToId        = inner.optString("replyToId").ifEmpty { null },
             replyPreview     = inner.optString("replyPreview").ifEmpty { null },
-            durationMs       = if (inner.isNull("durationMs")) null else inner.optLong("durationMs")
+            durationMs       = if (inner.isNull("durationMs")) null else inner.optLong("durationMs"),
+            groupId          = groupId,
+            senderNodeId     = if (groupId != null) from else null
         )
         messageDao.insert(entity)
         onMessageStored?.invoke(entity)
-        messagePulse.pulse(from)
+        messagePulse.pulse(conversationKey)
 
         return JSONObject().put("t", "ack").put("id", frame.optString("id"))
     }
@@ -192,9 +210,11 @@ class TcpMessageServer @Inject constructor(
         val inner = try { JSONObject(String(plaintext, Charsets.UTF_8)) } catch (e: Exception) { return null }
 
         // Route sealed control messages by their inner "ctl" type.
-        when (inner.optString("ctl")) {
-            "react" -> reactionHandler?.invoke(from, inner)
-            else    -> controlHandler?.invoke(from, inner)
+        val ctlType = inner.optString("ctl")
+        when {
+            ctlType == "react"          -> reactionHandler?.invoke(from, inner)
+            ctlType.startsWith("grp_")  -> groupControlHandler?.invoke(from, inner)
+            else                        -> controlHandler?.invoke(from, inner)
         }
         return JSONObject().put("t", "ack").put("id", inner.optString("id"))
     }

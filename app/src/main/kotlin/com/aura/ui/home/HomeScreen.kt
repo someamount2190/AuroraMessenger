@@ -66,10 +66,12 @@ fun HomeScreen(
     onAddContact: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenConversation: (String) -> Unit,
+    onOpenGroup: (String) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val serverStatus by viewModel.serverController.status.collectAsState()
     val contacts by viewModel.contacts.collectAsState()
+    val groupRows by viewModel.groups.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val filteredContacts by viewModel.filteredContacts.collectAsState()
     val messageMatches by viewModel.messageMatches.collectAsState()
@@ -136,12 +138,14 @@ fun HomeScreen(
                     ServerStatusCard(running)
                     Spacer(Modifier.height(8.dp))
                 }
-                if (contacts.isEmpty()) {
+                if (contacts.isEmpty() && groupRows.isEmpty()) {
                     EmptyState(modifier = Modifier.weight(1f))
                 } else {
                     ContactList(
                         contacts = contacts,
+                        groups = groupRows,
                         onOpen = onOpenConversation,
+                        onOpenGroup = onOpenGroup,
                         onAccept = viewModel::acceptPair,
                         onReject = viewModel::rejectPair,
                         onCancel = viewModel::cancelPair,
@@ -313,6 +317,57 @@ private fun formatUptime(seconds: Long): String = when {
     else           -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
 }
 
+/** A home row for a group conversation. */
+@Composable
+private fun GroupListRow(row: GroupRow, onOpen: (String) -> Unit) {
+    val hasUnread = row.unread > 0
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp)
+            .auroraGlass()
+            .clickable { onOpen(row.group.groupId) }
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.tertiaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                row.group.name.take(1).uppercase(),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                row.group.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = if (hasUnread) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+            Text(
+                row.lastMessage?.let { groupPreview(it) } ?: "${row.memberCount} members",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (hasUnread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+        if (hasUnread) { Spacer(Modifier.width(8.dp)); UnreadBadge(row.unread) }
+    }
+}
+
+private fun groupPreview(m: MessageEntity): String = when (m.type) {
+    "image" -> "📷 Photo"
+    "video" -> "📹 Video"
+    "audio" -> "🎤 Voice message"
+    else    -> m.body
+}
+
 @Composable
 private fun ContactList(
     contacts: List<ContactRow>,
@@ -321,9 +376,14 @@ private fun ContactList(
     onReject: (String) -> Unit,
     onCancel: (String) -> Unit,
     pulses: SharedFlow<String>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    groups: List<GroupRow> = emptyList(),
+    onOpenGroup: (String) -> Unit = {}
 ) {
     LazyColumn(modifier = modifier.fillMaxWidth()) {
+        items(groups.size, key = { "group_" + groups[it].group.groupId }) { i ->
+            GroupListRow(groups[i], onOpenGroup)
+        }
         items(contacts.size, key = { contacts[it].contact.nodeIdHex }) { i ->
             val row = contacts[i]
             val contact = row.contact

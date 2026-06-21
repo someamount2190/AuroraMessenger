@@ -2,6 +2,7 @@ package com.aura.network
 
 import com.aura.crypto.PrekeyManager
 import com.aura.crypto.toHex
+import com.aura.group.GroupMessageSender
 import com.aura.identity.IdentityStore
 import com.aura.media.MediaTransfer
 import com.aura.notify.Notifier
@@ -9,6 +10,7 @@ import com.aura.pairing.PairingCoordinator
 import com.aura.settings.AuroraSettings
 import com.aura.transport.MessageSender
 import com.aura.transport.TcpMessageServer
+import com.aura.transport.carry.CarryRelay
 import com.aura.ux.MessagePulse
 import android.util.Log
 import com.aura.di.IoDispatcher
@@ -44,6 +46,8 @@ class SyncEngine @Inject constructor(
     private val pairingManager: PairingCoordinator,
     private val messageSender: MessageSender,
     private val mediaTransfer: MediaTransfer,
+    private val groupMessageSender: GroupMessageSender,
+    private val carryRelay: CarryRelay,
     private val tcpServer: TcpMessageServer,
     private val settings: AuroraSettings,
     private val messagePulse: MessagePulse,
@@ -201,6 +205,10 @@ class SyncEngine @Inject constructor(
         // Media rides its own chunked transport, so retry pending photos/videos/voice
         // separately — once an RTC session warms up, a CGNAT peer becomes reachable.
         mediaTransfer.flushPendingMedia()
+        // Group messages fan out per member with their own delivery tracking.
+        groupMessageSender.flushGroupPending()
+        // Deliver any group envelopes we're carrying for members who were offline at send time.
+        carryRelay.flushCarryQueue()
 
         // Drain and dispatch signals (signed request — see RendezvousClient.getSignals).
         val signalsResult = rendezvousClient.getSignals(server, identity)

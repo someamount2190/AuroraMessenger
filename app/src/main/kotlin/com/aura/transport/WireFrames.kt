@@ -15,6 +15,12 @@ import org.json.JSONObject
  *  relay   { t:"relay", ip, port, payload }         payload = b64(raw frame bytes)
  *  relayed { t:"relayed", payload }                 relay's response passthrough
  *  ctl     { t:"ctl", from, to, sealed }            sealed control message (Phase 6 timer sync)
+ *  carry   { t:"carry", groupId, target, ttlMs, inner:<msg frame> }   degraded group relay:
+ *                                                  hold an opaque envelope for an offline
+ *                                                  co-member (see CarryProtocol). `inner` is a
+ *                                                  msg frame sealed for `target`; the courier
+ *                                                  ferries it but cannot read it.
+ *  carryack{ t:"carryack", id, target }            carry receipt (drop your held copy)
  *
  * Everything sensitive lives inside `sealed`; relays and observers see only
  * routing metadata of the hop they carry.

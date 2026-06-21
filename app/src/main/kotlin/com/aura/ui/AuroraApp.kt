@@ -54,6 +54,9 @@ import com.aura.ui.call.CallScreen
 import com.aura.ui.call.OngoingCallBar
 import com.aura.ui.lock.LockScreen
 import com.aura.ui.conversation.ConversationScreen
+import com.aura.ui.group.CreateGroupScreen
+import com.aura.ui.group.GroupConversationScreen
+import com.aura.ui.group.GroupInfoScreen
 import com.aura.ui.home.HomeScreen
 import com.aura.ui.legal.LegalScreen
 import com.aura.ui.onboarding.OnboardingScreen
@@ -78,11 +81,17 @@ object Routes {
     fun myCode(host: Boolean = false) = "mycode?host=$host"
     const val SETTINGS     = "settings"
     const val CONVERSATION = "conversation/{contactId}"
+    const val GROUP        = "group/{groupId}"
+    const val GROUP_INFO   = "groupinfo/{groupId}"
+    const val CREATE_GROUP = "creategroup?peer={peer}"
     const val CALL         = "call"
     const val SHARE        = "share"
     const val SHADOWMESH   = "shadowmesh"
     const val LEGAL        = "legal/{doc}"
     fun conversation(contactId: String) = "conversation/$contactId"
+    fun group(groupId: String) = "group/$groupId"
+    fun groupInfo(groupId: String) = "groupinfo/$groupId"
+    fun createGroup(peer: String = "") = "creategroup?peer=$peer"
     fun legal(doc: String) = "legal/$doc"
 }
 
@@ -285,7 +294,8 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
             HomeScreen(
                 onAddContact   = { navController.navigate(Routes.SCAN) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                onOpenConversation = { id -> navController.navigate(Routes.conversation(id)) }
+                onOpenConversation = { id -> navController.navigate(Routes.conversation(id)) },
+                onOpenGroup = { gid -> navController.navigate(Routes.group(gid)) }
             )
         }
         composable(
@@ -321,6 +331,33 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
                 onBack = { navController.popBackStack() },
                 onStartCall = { contactId, video ->
                     viewModel.callManager.startCall(contactId, video)
+                },
+                onAddPeople = { peer -> navController.navigate(Routes.createGroup(peer)) }
+            )
+        }
+        composable(
+            Routes.GROUP,
+            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+        ) {
+            GroupConversationScreen(
+                onBack = { navController.popBackStack() },
+                onOpenInfo = { gid -> navController.navigate(Routes.groupInfo(gid)) }
+            )
+        }
+        composable(
+            Routes.GROUP_INFO,
+            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+        ) {
+            GroupInfoScreen(onBack = { navController.popBackStack() })
+        }
+        composable(
+            Routes.CREATE_GROUP,
+            arguments = listOf(navArgument("peer") { type = NavType.StringType; defaultValue = "" })
+        ) {
+            CreateGroupScreen(
+                onBack = { navController.popBackStack() },
+                onCreated = { gid ->
+                    navController.navigate(Routes.group(gid)) { popUpTo(Routes.HOME) }
                 }
             )
         }

@@ -174,7 +174,6 @@ class MessageSender @Inject constructor(
     suspend fun sendControl(contact: ContactEntity, payload: JSONObject): Boolean {
         val identity = identityManager.getOrCreate()
         val myNodeId = identity.nodeId.toHex()
-        val address = resolvePeerAddress(contact) ?: return false
         val aad = "aura-ctl-v1|$myNodeId|${contact.nodeIdHex}".toByteArray()
         val sealed = ratchet.sealNext(
             contact.nodeIdHex, payload.toString().toByteArray(Charsets.UTF_8), aad
@@ -185,6 +184,12 @@ class MessageSender @Inject constructor(
             .put("to", contact.nodeIdHex)
             .put("n", sealed.n)
             .put("sealed", Base64.encodeToString(sealed.bytes, Base64.NO_WRAP))
+        // Prefer the NAT-traversing data channel (same path as messages); fall back to TCP.
+        // The frame is idempotent (carries `n`), so reusing it on the fallback is safe.
+        if (rtcTransport.isConnected(contact.nodeIdHex)) {
+            if (rtcTransport.send(contact.nodeIdHex, frame)?.optString("t") == "ack") return true
+        }
+        val address = resolvePeerAddress(contact) ?: return false
         return exchangeFrame(address, frame)?.optString("t") == "ack"
     }
 

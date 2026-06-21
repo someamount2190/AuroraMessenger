@@ -10,14 +10,18 @@ import com.aura.crypto.RatchetManager
 import com.aura.crypto.RatchetStore
 import com.aura.crypto.SymmetricCipher
 import com.aura.db.AuroraDatabase
+import com.aura.db.CarryDao
 import com.aura.db.ContactDao
 import com.aura.db.DbKeyStore
+import com.aura.db.GroupDao
 import com.aura.db.MeshPeerDao
 import com.aura.db.MessageDao
 import com.aura.db.PrekeyDao
 import com.aura.db.RatchetDao
 import com.aura.db.RoomPrekeyStore
 import com.aura.db.RoomRatchetStore
+import com.aura.group.RoomGroupMembershipGate
+import com.aura.transport.carry.GroupMembershipGate
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -61,6 +65,15 @@ object AppModule {
 
     @Provides
     fun providePrekeyDao(db: AuroraDatabase): PrekeyDao = db.prekeyDao()
+
+    @Provides
+    fun provideCarryDao(db: AuroraDatabase): CarryDao = db.carryDao()
+
+    @Provides
+    fun provideGroupDao(db: AuroraDatabase): GroupDao = db.groupDao()
+
+    @Provides @Singleton
+    fun provideGroupMembershipGate(impl: RoomGroupMembershipGate): GroupMembershipGate = impl
 
     // ── aura-crypto wiring ──────────────────────────────────────────────────
     // The crypto library is storage- and DI-agnostic: it persists through the

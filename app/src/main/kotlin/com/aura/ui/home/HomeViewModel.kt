@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aura.db.ContactDao
 import com.aura.db.ContactEntity
+import com.aura.db.GroupDao
+import com.aura.db.GroupEntity
 import com.aura.db.MessageDao
 import com.aura.db.MessageEntity
 import com.aura.pairing.PairingCoordinator
@@ -35,6 +37,25 @@ data class ContactRow(
     val lastMessage: MessageEntity? = null
 )
 
+/** A group plus its member count, unread count, and last message (for the home row). */
+data class GroupRow(
+    val group: GroupEntity,
+    val memberCount: Int,
+    val unread: Int = 0,
+    val lastMessage: MessageEntity? = null
+)
+
+/** A home conversation row: either a 1:1 contact or a group. */
+sealed interface ConversationRow {
+    val lastActivityMs: Long
+    data class Contact(val row: ContactRow) : ConversationRow {
+        override val lastActivityMs get() = row.lastMessage?.timestampMs ?: row.contact.createdAtMs
+    }
+    data class Group(val row: GroupRow) : ConversationRow {
+        override val lastActivityMs get() = row.lastMessage?.timestampMs ?: row.group.createdMs
+    }
+}
+
 /** A message-body search hit, with the matched message and its contact's name. */
 data class MessageMatch(
     val message: MessageEntity,
@@ -46,6 +67,7 @@ class HomeViewModel @Inject constructor(
     val serverController: RendezvousServerController,
     contactDao: ContactDao,
     private val messageDao: MessageDao,
+    private val groupDao: GroupDao,
     appLockManager: AppLock,
     messagePulse: MessagePulse,
     private val pairingManager: PairingCoordinator
@@ -81,6 +103,37 @@ class HomeViewModel @Inject constructor(
                     )
                 }.sortedByDescending { it.lastMessage?.timestampMs ?: it.contact.createdAtMs }
             }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Group conversations (hidden in decoy mode), with member count, unread and last message. */
+    val groups: StateFlow<List<GroupRow>> =
+        combine(
+            groupDao.observeGroups(),
+            appLockManager.decoyActive,
+            messageDao.observeUnreadByContact(),
+            messageDao.observeLatestPerContact()
+        ) { list, decoy, unreadList, latestList ->
+            if (decoy) {
+                emptyList()
+            } else {
+                val unread = unreadList.associate { it.contactNodeIdHex to it.count }
+                val latest = latestList.associateBy { it.contactNodeIdHex }
+                list.map { g ->
+                    GroupRow(
+                        group = g,
+                        memberCount = groupDao.members(g.groupId).size,
+                        unread = unread[g.groupId] ?: 0,
+                        lastMessage = latest[g.groupId]
+                    )
+                }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Contacts and groups interleaved by last activity — the unified home conversation list. */
+    val conversations: StateFlow<List<ConversationRow>> =
+        combine(contacts, groups) { contactRows, groupRows ->
+            (contactRows.map { ConversationRow.Contact(it) } + groupRows.map { ConversationRow.Group(it) })
+                .sortedByDescending { it.lastActivityMs }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // ── Search ────────────────────────────────────────────────────────────────

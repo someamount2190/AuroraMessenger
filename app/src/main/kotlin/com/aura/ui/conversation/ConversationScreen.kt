@@ -132,6 +132,7 @@ fun ConversationScreen(
     contactId: String,
     onBack: () -> Unit,
     onStartCall: (String, Boolean) -> Unit = { _, _ -> },
+    onAddPeople: (String) -> Unit = {},
     viewModel: ConversationViewModel = hiltViewModel()
 ) {
     val contact by viewModel.contact.collectAsState()
@@ -304,6 +305,10 @@ fun ConversationScreen(
                         Icon(Icons.Default.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Add people") },
+                            onClick = { menuOpen = false; onAddPeople(viewModel.contactId) }
+                        )
                         DropdownMenuItem(
                             text = { Text("Rename contact") },
                             onClick = { menuOpen = false; showRename = true }
