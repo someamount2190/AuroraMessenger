@@ -83,7 +83,7 @@ class RendezvousClient @Inject constructor(
      * queue/channel (signal drain, /wait long-poll, prekey publish) so the signing
      * and header layout live in exactly one place.
      */
-    private fun Request.Builder.signedDrainAuth(identity: NodeIdentity): Request.Builder {
+    private suspend fun Request.Builder.signedDrainAuth(identity: NodeIdentity): Request.Builder {
         val ts = System.currentTimeMillis()
         val sig = signer.signEd25519Only(
             AuroraRendezvousServer.drainMessage(identity.nodeId.toHex(), ts),

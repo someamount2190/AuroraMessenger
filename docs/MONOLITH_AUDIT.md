@@ -78,10 +78,12 @@ Two classes of work:
    - **RendezvousClient** keeps its cohesive HTTP surface; only the duplicated
      drain-auth headers were unified.
 
-> Caveat: the authoring environment had no Android SDK/Gradle, so every change is
-> verified by inspection (declaration uniqueness, brace/paren balance, import and
-> visibility checks, call-site mapping) — **not** by a green build. Compile and run
-> the `PairingCrypto*` / `CallLog` / wire-frame / DAO suites before merging.
+> Verification: the full `:app` module compiles and the JVM/Robolectric unit
+> suite is green after the refactor — **75 app tests, 0 failures** (incl.
+> `RoomDaoTest`, `PairingCryptoTest`/`PairingCryptoAttacks`, `CallLogTest`,
+> `CheckinSigningTest`), plus the standalone `:crypto` suite. A `SessionStart`
+> hook (`.claude/hooks/session-start.sh`) provisions the Android SDK so
+> `gradle :app:testDebugUnitTest` runs in web sessions.
 
 ## Findings, by priority
 

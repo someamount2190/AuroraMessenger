@@ -3,7 +3,7 @@ package com.aura.ui.conversation
 import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.view.Surface
-import android.view.SurfaceTexture
+import android.graphics.SurfaceTexture
 import android.view.TextureView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
