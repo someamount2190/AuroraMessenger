@@ -9,21 +9,21 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertTrue
 
 /**
- * Cross-implementation known-answer test for the hand-rolled XChaCha20-Poly1305 in
- * [SymmetricCipher] (HChaCha20 subkey + RFC-8439 ChaCha20-Poly1305, 24-byte nonce).
+ * Cross-implementation known-answer test for the XChaCha20-Poly1305 in [SymmetricCipher],
+ * which is now backed by **Google Tink** (`subtle.XChaCha20Poly1305`, 24-byte nonce).
  *
- * BouncyCastle 1.78.1 has **no** XChaCha engine (that's *why* the project hand-rolls it),
- * and transcribing the draft-irtf-cfrg-xchacha §A.1 vector by hand proved unreliable, so
- * this builds an **independent reference** of the same construction:
- *   - a clean-room [hChaCha20] written straight from the algorithm (independent of the
- *     project's private HChaCha20), and
+ * BouncyCastle still ships no XChaCha engine in any released version, and transcribing the
+ * draft-irtf-cfrg-xchacha §A.1 vector by hand proved unreliable, so this builds an
+ * **independent reference** of the same construction and checks Tink against it:
+ *   - a clean-room [hChaCha20] written straight from the algorithm (independent of Tink), and
  *   - BouncyCastle's **own** RFC-8439 [ChaCha20Poly1305] (12-byte nonce) as the trusted
  *     inner AEAD, keyed by the HChaCha20 subkey with nonce `00000000 ‖ nonce[16:24]`.
  *
- * The two implementations must **interoperate both directions** across varied inputs.
- * Two independently-written XChaCha constructions agreeing byte-for-byte (incl. empty and
- * 1 KiB messages, with and without AAD) is the known-answer check — it would catch a real
- * bug (wrong HChaCha20 rounds, wrong subkey, wrong inner-nonce layout, AAD not bound).
+ * Tink and this independent reference must **interoperate both directions** across varied
+ * inputs. Two independently-written XChaCha constructions (Tink vs. clean-room HChaCha20 + BC)
+ * agreeing byte-for-byte (incl. empty and 1 KiB messages, with and without AAD) is the
+ * known-answer check — it would catch a real bug (wrong rounds, wrong subkey, wrong
+ * inner-nonce layout, AAD not bound).
  */
 class SymmetricCipherKatTest {
 
