@@ -25,8 +25,8 @@ data class ContactEntity(
      */
     val dilithiumPubB64: String? = null,
     /**
-     * Legacy field. The KEM shared secret is no longer stored at rest: it seeds a
-     * forward-secret ratchet at pairing and is then destroyed (see RatchetManager).
+     * Legacy field. The KEM shared secret is no longer stored at rest: it seeds the
+     * KEM Double Ratchet at pairing and is then destroyed (see KemRatchetManager).
      * Kept empty for pre-ratchet rows only.
      */
     val sharedSecretB64: String = "",

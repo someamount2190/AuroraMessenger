@@ -4,7 +4,6 @@ import android.util.Base64
 import com.aura.crypto.HybridKem
 import com.aura.crypto.KemRatchetManager
 import com.aura.crypto.PrekeyManager
-import com.aura.crypto.RatchetManager
 import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.db.ContactEntity
@@ -25,7 +24,6 @@ class ScannerPairing @Inject constructor(
     private val kem: HybridKem,
     private val pairingCrypto: PairingCrypto,
     private val pairingSignal: PairingSignal,
-    private val ratchet: RatchetManager,
     private val kemRatchet: KemRatchetManager,
     private val contactDao: ContactDao,
     private val eraser: ContactEraser,
@@ -131,10 +129,9 @@ class ScannerPairing @Inject constructor(
         // sharedSecretB64 already holds the finished pairing root (derived at scan time,
         // forward-secret when prekeys were used). Seed the ratchet straight from it.
         val root = Base64.decode(contact.sharedSecretB64, Base64.NO_WRAP)
-        // KEM message ratchet (initiator — sends first / auto-bootstrap); seed before the
-        // root is wiped. RatchetManager still provides the SAS code + media-at-rest key.
-        kemRatchet.seed(from, root.copyOf(), iAmInitiator = true)
-        ratchet.seedFromSharedSecret(from, myNodeIdHex, from, root)   // wipes root
+        // Single KEM ratchet (initiator — sends first / auto-bootstrap). It derives the SAS
+        // fingerprint + media-at-rest key from the root and wipes the root before returning.
+        kemRatchet.seed(from, root, iAmInitiator = true)
         contactDao.markVerifyReady(from, PairState.VERIFY, dilithiumB64)
         events.emit(PairEvent.Accepted(from))
         Unit

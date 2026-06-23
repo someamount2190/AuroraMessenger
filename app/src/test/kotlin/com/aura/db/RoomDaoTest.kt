@@ -117,20 +117,6 @@ class RoomDaoTest {
         assertNull(messages.byId("m1"))
     }
 
-    // ── RatchetDao ─────────────────────────────────────────────────────────────
-    @Test fun ratchet_stateRoundTrip() = runBlocking {
-        ratchets.upsertState(RatchetStateEntity("a", "sck", 0, "rck", 0, "fp", "mk"))
-        assertEquals("sck", ratchets.state("a")!!.sendChainKeyB64)
-    }
-
-    @Test fun ratchet_pruneKeepsNewest() = runBlocking {
-        for (n in 1L..5L) ratchets.putSkipped(RatchetSkippedKeyEntity("a", n, "k$n"))
-        ratchets.pruneSkipped("a", keep = 2)
-        assertEquals(2, ratchets.skippedCount("a"))
-        assertNotNull(ratchets.skipped("a", 5))
-        assertNull(ratchets.skipped("a", 1))
-    }
-
     // ── PrekeyDao ──────────────────────────────────────────────────────────────
     @Test fun prekey_currentSpkIsNewest() = runBlocking {
         prekeys.insert(PrekeyEntity("s1", "spk", "kp", "kpr", createdAtMs = 1))

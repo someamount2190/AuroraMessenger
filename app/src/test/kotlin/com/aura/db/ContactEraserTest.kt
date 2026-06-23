@@ -4,7 +4,8 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.aura.crypto.Hkdf
-import com.aura.crypto.RatchetManager
+import com.aura.crypto.HybridKem
+import com.aura.crypto.KemRatchetManager
 import com.aura.crypto.SymmetricCipher
 import com.aura.media.EncryptedMediaStore
 import kotlinx.coroutines.runBlocking
@@ -21,7 +22,7 @@ import kotlin.test.assertTrue
 
 /**
  * T4 security — cryptographic erase. After wipe, the contact row, its messages, its
- * media file, AND its ratchet keys must all be gone (so prior ciphertext is noise).
+ * media file, AND its KEM ratchet session must all be gone (so prior ciphertext is noise).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -29,22 +30,18 @@ class ContactEraserTest {
 
     private lateinit var db: AuroraDatabase
     private val cipher = SymmetricCipher()
-    private lateinit var ratchet: RatchetManager
+    private lateinit var kemRatchet: KemRatchetManager
     private lateinit var media: EncryptedMediaStore
     private lateinit var eraser: ContactEraser
 
     private val node = "deadbeef"
-    private val peer = "ffffffff"
 
     @Before fun setUp() = runBlocking {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(ctx, AuroraDatabase::class.java).allowMainThreadQueries().build()
-        ratchet = RatchetManager(RoomRatchetStore(db.ratchetDao()), Hkdf(), cipher)
-        val kemRatchet = com.aura.crypto.KemRatchetManager(
-            com.aura.db.RoomKemSessionStore(db.ratchetDao()), com.aura.crypto.HybridKem(), Hkdf(), cipher
-        )
+        kemRatchet = KemRatchetManager(RoomKemSessionStore(db.ratchetDao()), HybridKem(), Hkdf(), cipher)
         media = EncryptedMediaStore(ctx, cipher)
-        eraser = ContactEraser(db.contactDao(), db.messageDao(), ratchet, kemRatchet, media)
+        eraser = ContactEraser(db.contactDao(), db.messageDao(), kemRatchet, media)
 
         db.contactDao().upsert(
             ContactEntity(node, "Alice", "k", "e", createdAtMs = 1, pairingSent = true)
@@ -57,7 +54,7 @@ class ContactEraserTest {
         db.messageDao().insert(
             MessageEntity("msg-text", node, fromMe = false, body = "hi", timestampMs = 2, status = "sent")
         )
-        ratchet.seedFromSharedSecret(node, node, peer, ByteArray(32) { 5 })
+        kemRatchet.seed(node, ByteArray(32) { 5 }, iAmInitiator = true)
     }
 
     @After fun tearDown() = db.close()
@@ -65,7 +62,7 @@ class ContactEraserTest {
     @Test fun wipe_removesEverythingForContact() = runBlocking {
         val mediaPath = db.messageDao().mediaPathsForContact(node).single()
         assertTrue(File(mediaPath).exists())
-        assertTrue(ratchet.isSeeded(node))
+        assertTrue(kemRatchet.isSeeded(node))
 
         eraser.wipe(node)
 
@@ -73,15 +70,15 @@ class ContactEraserTest {
         assertNull(db.messageDao().byId("msg-text"), "messages gone")
         assertNull(db.messageDao().byId("msg-media"), "media message gone")
         assertFalse(File(mediaPath).exists(), "encrypted media file deleted")
-        assertFalse(ratchet.isSeeded(node), "ratchet cryptographically erased")
-        assertNull(db.ratchetDao().state(node), "ratchet state row gone")
+        assertFalse(kemRatchet.isSeeded(node), "ratchet cryptographically erased")
+        assertNull(db.ratchetDao().kemSession(node), "KEM ratchet session row gone")
     }
 
     @Test fun wipe_isCryptographicErase_priorFramesUnreadable() = runBlocking {
-        // seal a frame for the contact, then wipe — the chain key is destroyed, so even
+        // seal a frame for the contact, then wipe — the ratchet session is destroyed, so even
         // with the ciphertext in hand the conversation can no longer be opened.
-        val sealed = ratchet.sealNext(node, "secret".toByteArray(), "aad".toByteArray())!!
+        val sealed = kemRatchet.sealNext(node, "secret".toByteArray(), "aad".toByteArray())!!
         eraser.wipe(node)
-        assertNull(ratchet.open(node, sealed.n, sealed.bytes, "aad".toByteArray()))
+        assertNull(kemRatchet.open(node, sealed.bytes, "aad".toByteArray()))
     }
 }

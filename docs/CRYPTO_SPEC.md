@@ -47,8 +47,7 @@ caught downstream (e.g. by SAS mismatch).
 | `aura-ratchet-v2\|root` | KEM-ratchet root step (HKDF salt=root, ikm=X-Wing ss → 64 B → new root ‖ chain key) |
 | `aura-ratchet-v2\|mk` / `aura-ratchet-v2\|ck` | Per-message key / chain-key advance (KEM ratchet) |
 | `aura-ratchet-v2\|bootstrap` | Seed for the deterministic responder bootstrap ratchet key |
-| `aura-ratchet-v1\|chain\|{low,high}`, `\|mk`, `\|ck` | SAS/media seeding only (legacy symmetric `RatchetManager`; not the message ratchet) |
-| `aura-sas-v1` | 8-byte SAS fingerprint from root |
+| `aura-sas-v1` | 8-byte SAS fingerprint from root (stored in the KEM ratchet blob) |
 | `aura-sas-id-v1\|<targetNodeIdHex>` | Per-identity SAS code binding |
 | `aura-prekey-v1\|<nodeIdHex>\|<kind>\|<id>\|<pubB64>` | Signed message for a published prekey |
 
@@ -127,12 +126,15 @@ These travel as opaque `/signal` payloads (the rendezvous never parses them):
 | pairreject | `aura-pairreject-v1\|<from>\|<to>` |
 | contactremove | `aura-contactremove-v1\|<from>\|<to>` |
 
-## 6. Message ratchet — post-quantum KEM Double Ratchet (`KemDoubleRatchet` / `KemRatchetManager`)
+## 6. Ratchet — post-quantum KEM Double Ratchet (`KemDoubleRatchet` / `KemRatchetManager`)
 
-Messages and media are sealed with a **KEM Double Ratchet**: Signal's Double Ratchet with an
+**All** sealed traffic — chat messages, media wire frames, and call/WebRTC signaling — rides
+the **one** per-contact ratchet: a **KEM Double Ratchet**, Signal's Double Ratchet with an
 **X-Wing** KEM step replacing the DH step, so it provides **forward secrecy *and*
-post-compromise security ("healing")** — the gap the older symmetric ratchet had. Full design
-and security argument in [`PQ_RATCHET_DESIGN.md`](PQ_RATCHET_DESIGN.md); summary:
+post-compromise security ("healing")** — the gap the retired symmetric ratchet had. The earlier
+symmetric `RatchetManager` has been removed; its two roles (the SAS fingerprint and the
+media-at-rest key) are now folded into this ratchet's session blob. Full design and security
+argument in [`PQ_RATCHET_DESIGN.md`](PQ_RATCHET_DESIGN.md); summary:
 
 - **Seeding.** Both peers derive a shared bootstrap ratchet keypair deterministically from the
   pairing root (`aura-ratchet-v2|bootstrap`). The **initiator** is set up to send first; the
@@ -151,18 +153,19 @@ and security argument in [`PQ_RATCHET_DESIGN.md`](PQ_RATCHET_DESIGN.md); summary
 - **Out-of-order.** Skipped message keys are cached per ratchet epoch (cap **1024**); a frame
   more than **512** ahead is refused (skip-flood guard). KEM-DR property: an epoch's first
   (ciphertext-bearing) message must arrive before later ones in that epoch.
-- **Persistence.** The whole session (root, chains, ratchet keypair, peer key, skipped cache) is
-  stored as one blob per contact (`kem_ratchet` table); `decrypt` commits only on a successful
-  auth, so a forged frame can't corrupt live state.
-
-> The legacy symmetric `RatchetManager` (`aura-ratchet-v1`) is **no longer on the message
-> path** — it is retained only to derive/store the SAS fingerprint and the media-at-rest key
-> from the pairing root.
+- **Persistence.** One blob per contact (`kem_ratchet` table): the static 8-byte SAS fingerprint
+  and 32-byte media-at-rest key, then the whole serialized session (root, chains, ratchet
+  keypair, peer key, skipped cache). `decrypt` commits only on a successful auth, so a forged
+  frame can't corrupt live state.
+- **Shared stream.** Messages, media, and call/RTC signaling all seal through this one session
+  (distinguished by per-purpose AEAD labels — `aura-msg-v1`, `aura-media-v1`, `aura-call-v1`,
+  `aura-rtc-v1`); a per-contact mutex serializes concurrent seals/opens across those transports.
 
 ## 7. Short Authentication String (SAS)
 
 Each side computes a 6-digit code **bound to a target identity**, locally, never transmitted
-(seeded from the root by `RatchetManager` at pairing):
+(from the 8-byte SAS fingerprint the `KemRatchetManager` derives from the root and stores at
+pairing):
 ```
 bound  = HKDF(ikm = sasFingerprint(8B), info = "aura-sas-id-v1|<targetNodeIdHex>", len = 4)
 bits20 = (bound[0]<<12) | (bound[1]<<4) | (bound[2] >> 4)
@@ -185,7 +188,7 @@ is attempt-limited).
 
 ## 9. At-rest & backups (summary)
 SQLCipher (AES-256) DB; identity keys in EncryptedSharedPreferences under a Keystore master
-key; media under a `RatchetManager`-derived key; opt-in backups sealed with XChaCha20-Poly1305
+key; media under the KEM ratchet's local-only media-at-rest key; opt-in backups sealed with XChaCha20-Poly1305
 under an Argon2id-derived key. Backups carry the identity, contacts, messages, SAS/media keys,
 **and the KEM ratchet sessions** (so a device migration resumes conversations without
 re-pairing). See [`DATA_AT_REST.md`](DATA_AT_REST.md) and [`KEY_MANAGEMENT.md`](KEY_MANAGEMENT.md).

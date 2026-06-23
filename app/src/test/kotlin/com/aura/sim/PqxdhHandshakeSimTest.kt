@@ -9,14 +9,14 @@ import com.aura.crypto.HybridCiphertext
 import com.aura.crypto.HybridKem
 import com.aura.crypto.HybridPublicKey
 import com.aura.crypto.HybridSigner
+import com.aura.crypto.KemRatchetManager
 import com.aura.crypto.NodeIdentityGenerator
 import com.aura.crypto.PrekeyManager
-import com.aura.crypto.RatchetManager
 import com.aura.crypto.SymmetricCipher
 import com.aura.crypto.toHex
 import com.aura.db.AuroraDatabase
+import com.aura.db.RoomKemSessionStore
 import com.aura.db.RoomPrekeyStore
-import com.aura.db.RoomRatchetStore
 import com.aura.pairing.PairingCrypto
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -116,18 +116,19 @@ class PqxdhHandshakeSimTest {
         // ── The handshake agreed: both sides derived the same root from real X-Wing KEM. ──
         assertArrayEquals("PQXDH roots must match on both peers", initRoot, respRoot)
 
-        // ── Seed both ratchets from their root and exchange sealed messages both ways. ──
+        // ── Seed both KEM ratchets from their root and exchange sealed messages both ways. ──
+        // The initiator (sends first) seeds as sender; the responder as receiver.
         val initDb = inMemoryDb(ctx)
-        val initRatchet = RatchetManager(RoomRatchetStore(initDb.ratchetDao()), hkdf, cipher)
-        val respRatchet = RatchetManager(RoomRatchetStore(respDb.ratchetDao()), hkdf, cipher)
-        initRatchet.seedFromSharedSecret(respHex, initHex, respHex, initRoot.copyOf())
-        respRatchet.seedFromSharedSecret(initHex, respHex, initHex, respRoot.copyOf())
+        val initRatchet = KemRatchetManager(RoomKemSessionStore(initDb.ratchetDao()), kem, hkdf, cipher)
+        val respRatchet = KemRatchetManager(RoomKemSessionStore(respDb.ratchetDao()), kem, hkdf, cipher)
+        initRatchet.seed(respHex, initRoot.copyOf(), iAmInitiator = true)
+        respRatchet.seed(initHex, respRoot.copyOf(), iAmInitiator = false)
 
         val aad = "aura-msg-v1".toByteArray()
         val s1 = initRatchet.sealNext(respHex, "hello over real PQXDH".toByteArray(), aad)!!
-        assertEquals("hello over real PQXDH", String(respRatchet.open(initHex, s1.n, s1.bytes, aad)!!))
+        assertEquals("hello over real PQXDH", String(respRatchet.open(initHex, s1.bytes, aad)!!))
         val s2 = respRatchet.sealNext(initHex, "reply".toByteArray(), aad)!!
-        assertEquals("reply", String(initRatchet.open(respHex, s2.n, s2.bytes, aad)!!))
+        assertEquals("reply", String(initRatchet.open(respHex, s2.bytes, aad)!!))
 
         // Both peers compute the same SAS from the shared root (MITM would diverge).
         assertEquals(initRatchet.sasCodeFor(respHex, respHex), respRatchet.sasCodeFor(initHex, respHex))

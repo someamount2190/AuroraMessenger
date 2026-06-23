@@ -55,8 +55,8 @@ Add to `crypto/build.gradle.kts` (testImplementation) and `app/build.gradle.kts`
 
 ### Shared test infrastructure (build once, in `app/src/test/.../testutil/` and `crypto/src/test/.../testutil/`)
 - **`MainDispatcherRule`** — swaps `Dispatchers.Main` for a test dispatcher (all ViewModel tests).
-- **`FakeRatchetStore` / `FakePrekeyStore`** — in-memory `MutableMap` implementations of the
-  `RatchetStore` / `PrekeyStore` interfaces. Lets T1 ratchet/prekey tests run with zero DB.
+- **`FakeKemSessionStore` / `FakePrekeyStore`** — in-memory `MutableMap` implementations of the
+  `KemSessionStore` / `PrekeyStore` interfaces. Lets T1 ratchet/prekey tests run with zero DB.
 - **DAO fakes** — `FakeContactDao`, `FakeMessageDao`, `FakeRatchetDao`, `FakePrekeyDao`,
   `FakeMeshPeerDao` backed by maps + `MutableStateFlow` for the `observe*()` Flows.
 - **`CryptoFixtures`** — deterministic key pairs / identities / known-answer test vectors
@@ -75,9 +75,9 @@ crypto/src/test/kotlin/com/aura/crypto/   (all pure-JVM, incl. PQC)
   HkdfTest.kt  HkdfRfc5869KatTest.kt   SymmetricCipherTest.kt  SymmetricCipherKatTest.kt
   HybridKemTest.kt  HybridSignerTest.kt  NodeIdentityTest.kt  PrekeyManagerTest.kt
   KemDoubleRatchetTest.kt  KemRatchetCodecTest.kt  KemRatchetManagerTest.kt
-  PqcKatTest.kt  WycheproofTest.kt  ClassicalKatTest.kt  RatchetManagerTest.kt
+  PqcKatTest.kt  WycheproofTest.kt  ClassicalKatTest.kt  CryptoAttacks.kt
   CryptoUtilsTest.kt  B64Test.kt  CryptoResultTest.kt
-  testutil/ (FakeRatchetStore, FakePrekeyStore)
+  testutil/ (FakeKemSessionStore, FakePrekeyStore)
 
 app/src/test/kotlin/com/aura/            (JVM + Robolectric)
   pairing/PairingManagerTest.kt          transport/MessageSenderTest.kt
@@ -116,21 +116,18 @@ app/src/androidTest/kotlin/com/aura/     (device/emulator)
 - `generateKey` returns `KEY_BYTES` length, high-entropy (no repeats across N calls).
 - XChaCha20 KAT against RFC/draft test vectors (internal `qr`/`toLE`/`fromLE` exercised via public API).
 
-### `RatchetManager` (with `FakeRatchetStore`) — the highest-value T1 target
-- **Seed & role assignment:** after `seedFromSharedSecret`, `isSeeded` true; the
-  lexicographically-smaller node sends on "low", peer mirrors (assert send/recv chains are crossed).
-- **Forward-secret round-trip:** Alice `sealNext` → Bob `open` yields plaintext; counter `n` increments per seal.
-- **Chain advances / old key discarded:** sealing twice produces different message keys; a captured chain key can't open a *prior* frame.
-- **Out-of-order:** seal n=0,1,2; open 2 then 0 then 1 → all succeed (skipped-key cache).
-- **Single-use skipped key:** opening the same skipped `n` twice → second returns null.
-- **Replay:** opening an already-consumed in-order frame → null.
-- **Tamper leaves chain intact:** a forged/corrupted frame returns null AND does **not** advance `recvN` (next valid frame still opens). *(guards the "forged frame can't burn the chain" property)*
-- **Skip-flood guard:** gap `> MAX_SKIP_AHEAD (512)` → null, no state change.
-- **Skipped cap:** never retains more than `MAX_SKIPPED_STORED (1024)` per contact (`pruneSkipped`).
-- **SAS:** `sasCode` is 6 digits, stable; both peers (same root) compute the same `sasCodeFor(target)`; a *different* root → different code (MITM detection). `sasCodeFor` is bound to target id (different target → different code).
-- **`mediaKey`** present after seed, stable, distinct from chain keys.
+### `KemRatchetManager` / `KemDoubleRatchet` (with `FakeKemSessionStore`) — the highest-value T1 target
+The single per-contact ratchet for messages, media, and call/RTC signaling.
+- **Seed & roles:** after `seed(root, iAmInitiator)`, `isSeeded` true; the initiator sends first,
+  the responder cannot send until it has received (`sealNext` → null before the first open).
+- **Forward-secret round-trip:** initiator `sealNext` → responder `open` yields plaintext, both ways through persistence.
+- **Out-of-order / replay:** seal n=0,1,2; open 2 then 0 then 1 → all succeed (skipped-key cache); replay of a consumed frame → null.
+- **Tamper leaves state intact:** a forged frame returns null AND `decrypt` commits nothing (next valid frame still opens).
+- **Skip/healing bounds:** epoch skip cap **1024**, skip-flood gap **512** refused; **post-compromise healing** (a stolen session snapshot cannot read post-heal traffic).
+- **SAS:** both peers (same root) compute the same `sasCodeFor(target)`; a *different* root → different code (MITM detection); 6 digits; survives ratchet steps.
+- **`mediaKey`** present after seed, 32 bytes, stable across ratchet steps, local-only (the two peers hold *different* media keys).
 - **`wipe`/`clear`:** after `wipe`, `isSeeded` false and `open` returns null; `clear` removes all contacts.
-- **Concurrency:** parallel `sealNext` on the same contact never produce a duplicate counter (per-contact `Mutex`).
+- **Concurrency:** a per-contact `Mutex` serializes seals/opens (messages + signaling share one session).
 
 ### `CryptoUtils` / `B64` / `CryptoResult`
 - `toHex`/`hexToBytes` round-trip + reject odd-length/invalid hex; `intTo4Bytes`/`readInt4` round-trip incl. negative & boundary ints (big-endian order asserted).
@@ -177,14 +174,14 @@ unencrypted in-memory Room build.
 ### Per-DAO CRUD + Flow tests (`ContactDao`, `MessageDao`, `RatchetDao`, `PrekeyDao`, `MeshPeerDao`)
 - `ContactDao`: `upsert`/`byNodeId` round-trip; `observeAll`/`observeByNodeId` emit on change (Turbine); `rename`, `setPairState`, `markVerifyReady`, `setVerify`, `incVerifyAttempts` mutate exactly the intended columns; `deleteByNodeId`/`deleteAll` cascade expectations; `pendingPairingSends`/`activeForBackup` filter correctly.
 - `MessageDao`: `insert`/`byId`; `observeConversation` ordering; `observeLatestPerContact` & `observeUnreadByContact` aggregation; `setStatus`/`setSealed`/`setExpiry`/`setMyReaction`/`setTheirReaction`; `expired(now)` boundary; `mediaPathsForContact`; `deleteForContact`/`deleteByIds`.
-- `RatchetDao`: mirrors the `RatchetStore` contract (see adapter test); `skippedCount`, `pruneSkipped(keep)` retains exactly `keep` newest.
+- `RatchetDao`: the KEM session blob — `kemUpsert`/`kemSession`/`kemDelete`/`kemDeleteAll`/`allKemForBackup` round-trip.
 - `PrekeyDao`: `currentSpk` returns newest SPK; `unusedOpks(n)`/`unusedOpkCount`; `pruneOldSpks(cutoff)`.
 - `MeshPeerDao`: `upsertAll`/`all`/`observeCount`.
 
-### Store-adapter conformance (`RoomRatchetStore`, `RoomPrekeyStore`)
-- A **shared contract test** runs the *same* assertions against (a) `FakeRatchetStore` and
-  (b) `RoomRatchetStore` over an in-memory DB, proving the adapter faithfully implements
-  `RatchetStore`/`PrekeyStore` (POJO↔entity mapping is lossless). Same for prekeys.
+### Store-adapter conformance (`RoomKemSessionStore`, `RoomPrekeyStore`)
+- A **shared contract test** runs the *same* assertions against (a) `FakeKemSessionStore` and
+  (b) `RoomKemSessionStore` over an in-memory DB, proving the adapter faithfully implements
+  `KemSessionStore` (blob round-trip / upsert / delete / deleteAll is lossless). Same for prekeys.
 
 ### Migrations (`MigrationTest`)
 - Each Room migration (… → current, the DB-v? chain) opens an old schema, runs the migration, asserts no data loss. `AutoMigration` validated against the exported `app/schemas/`.
@@ -222,7 +219,7 @@ crypto T2, `FakeRendezvous`, `FakeNotifier`):
 - `stampExpiryIfNeeded` sets `expiresAtMs` only when a timer is configured; expired sweep (`MessageDao.expired`) deletes message + media; per-conversation timer override vs global default.
 
 ### `ContactEraser.wipe` & `SecureWipe.wipeEverything` (security-critical)
-- `ContactEraser.wipe`: removes the contact's messages, ratchet, skipped keys, and media; afterward `RatchetManager.open` for that contact → null (cryptographic erase).
+- `ContactEraser.wipe`: removes the contact's messages, KEM ratchet session, and media; afterward `KemRatchetManager.open` for that contact → null (cryptographic erase).
 - `SecureWipe.wipeEverything`: identity cleared, DB key destroyed, all DAOs empty, media gone, settings reset; **post-condition: no stored ciphertext is decryptable** (keys gone). `exitProcess` invoked. *(androidTest — touches Keystore/SQLCipher.)*
 
 ### `AppLockManager` (`setPin`, `setDecoyPin`, `tryUnlock`, `lock`, `disableLock`) — Robolectric/androidTest
@@ -315,7 +312,7 @@ A single table-driven suite asserting each property end-to-end:
 
 ## 11. Build order (maps to effort)
 
-1. **T1 crypto** (`Hkdf`, `SymmetricCipher`, `RatchetManager`, utils) — no setup, highest risk reduction. *(½ day)*
+1. **T1 crypto** (`Hkdf`, `SymmetricCipher`, `KemRatchetManager`, utils) — no setup, highest risk reduction. *(½ day)*
 2. **T2 crypto** (`HybridKem`, `HybridSigner`, `NodeIdentity`, `PrekeyManager`) once liboqs-native is provisioned. *(½ day + native setup)*
 3. **Store fakes + adapter conformance + DAO tests.** *(1 day)*
 4. **PairingManager + MessageSender + ContactEraser/SecureWipe** with fakes (the security path). *(1–2 days)*

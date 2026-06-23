@@ -1,36 +1,21 @@
 package com.aura.crypto.testutil
 
+import com.aura.crypto.KemSessionStore
 import com.aura.crypto.PrekeyRecord
 import com.aura.crypto.PrekeyStore
-import com.aura.crypto.RatchetState
-import com.aura.crypto.RatchetStore
-import com.aura.crypto.SkippedKey
 
 /**
  * App-test copy of the in-memory store fakes (the crypto module's test source set is
  * not visible across modules). Used by StoreAdapterConformanceTest to run the same
  * contract against these and the Room-backed adapters.
  */
-class FakeRatchetStore : RatchetStore {
-    val states = HashMap<String, RatchetState>()
-    val skips = HashMap<Pair<String, Long>, SkippedKey>()
+class FakeKemSessionStore : KemSessionStore {
+    val sessions = HashMap<String, ByteArray>()
 
-    override suspend fun upsertState(state: RatchetState) { states[state.contactNodeIdHex] = state }
-    override suspend fun state(nodeIdHex: String): RatchetState? = states[nodeIdHex]
-    override suspend fun putSkipped(key: SkippedKey) { skips[key.contactNodeIdHex to key.n] = key }
-    override suspend fun skipped(nodeIdHex: String, n: Long): SkippedKey? = skips[nodeIdHex to n]
-    override suspend fun deleteSkipped(nodeIdHex: String, n: Long) { skips.remove(nodeIdHex to n) }
-    override suspend fun pruneSkipped(nodeIdHex: String, keep: Int) {
-        skips.values.filter { it.contactNodeIdHex == nodeIdHex }
-            .sortedByDescending { it.n }.drop(keep)
-            .forEach { skips.remove(it.contactNodeIdHex to it.n) }
-    }
-    override suspend fun deleteState(nodeIdHex: String) { states.remove(nodeIdHex) }
-    override suspend fun deleteSkippedForContact(nodeIdHex: String) {
-        skips.keys.filter { it.first == nodeIdHex }.toList().forEach { skips.remove(it) }
-    }
-    override suspend fun deleteAllState() { states.clear() }
-    override suspend fun deleteAllSkipped() { skips.clear() }
+    override suspend fun load(contactNodeIdHex: String): ByteArray? = sessions[contactNodeIdHex]
+    override suspend fun save(contactNodeIdHex: String, session: ByteArray) { sessions[contactNodeIdHex] = session }
+    override suspend fun delete(contactNodeIdHex: String) { sessions.remove(contactNodeIdHex) }
+    override suspend fun deleteAll() { sessions.clear() }
 }
 
 class FakePrekeyStore : PrekeyStore {

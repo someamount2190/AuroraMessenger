@@ -1,6 +1,6 @@
 package com.aura.crypto
 
-import com.aura.crypto.testutil.FakeRatchetStore
+import com.aura.crypto.testutil.FakeKemSessionStore
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -31,22 +31,22 @@ class CryptoStackDemo {
         assertContentEquals(pt, dec)
     }
 
-    @Test fun stack2_forwardSecretRatchet() = runTest {
+    @Test fun stack2_kemDoubleRatchet() = runTest {
         val hkdf = Hkdf(); val cipher = SymmetricCipher()
-        val alice = RatchetManager(FakeRatchetStore(), hkdf, cipher)
-        val bob = RatchetManager(FakeRatchetStore(), hkdf, cipher)
+        val alice = KemRatchetManager(FakeKemSessionStore(), HybridKem(), hkdf, cipher)
+        val bob = KemRatchetManager(FakeKemSessionStore(), HybridKem(), hkdf, cipher)
         val A = "aaaa"; val B = "bbbb"; val root = ByteArray(32) { 42 }
-        alice.seedFromSharedSecret(B, A, B, root.copyOf())
-        bob.seedFromSharedSecret(A, B, A, root.copyOf())
+        alice.seed(B, root.copyOf(), iAmInitiator = true)    // Alice sends first
+        bob.seed(A, root.copyOf(), iAmInitiator = false)
 
         val m1 = "Hi Bob".toByteArray()
         val s1 = alice.sealNext(B, m1, "aad".toByteArray())!!
-        val d1 = bob.open(A, s1.n, s1.bytes, "aad".toByteArray())!!
+        val d1 = bob.open(A, s1.bytes, "aad".toByteArray())!!
         val m2 = "Hey Alice".toByteArray()
         val s2 = bob.sealNext(A, m2, "aad".toByteArray())!!
-        val d2 = alice.open(B, s2.n, s2.bytes, "aad".toByteArray())!!
+        val d2 = alice.open(B, s2.bytes, "aad".toByteArray())!!
 
-        show("── 2) Forward-secret double ratchet (per-message keys) ──")
+        show("── 2) Post-quantum KEM double ratchet (per-message keys, X-Wing steps) ──")
         show("   Alice→Bob  : \"${String(m1)}\" → sealed ${s1.bytes.toHex().take(40)}… (n=${s1.n}) → \"${String(d1)}\"")
         show("   Bob→Alice  : \"${String(m2)}\" → sealed ${s2.bytes.toHex().take(40)}… (n=${s2.n}) → \"${String(d2)}\"")
         assertContentEquals(m1, d1); assertContentEquals(m2, d2)

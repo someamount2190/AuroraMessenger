@@ -7,13 +7,13 @@ Last updated: 2026-06-23 (post crypto re-engineering — pure-JVM, no liboqs/nat
 
 | | Verified green | Skipped |
 |---|---|---|
-| `crypto` module | **146** | 0 |
-| `app` module | **83** | 0 |
-| **Total** | **229** | 0 |
+| `crypto` module | **129** | 0 |
+| `app` module | **81** | 0 |
+| **Total** | **210** | 0 |
 
 Run (both pure-JVM/Robolectric, no native deps, CI-friendly):
-- `./gradlew -p crypto test` → 146 pass.
-- `./gradlew :app:testDebugUnitTest` → 83 pass.
+- `./gradlew -p crypto test` → 129 pass.
+- `./gradlew :app:testDebugUnitTest` → 81 pass.
 
 ## Crypto — all pure-JVM now ✅
 
@@ -29,11 +29,12 @@ runs on CI; there is no longer a device-only "native" tier or any `assumeTrue` s
   mlkem_768 / **mldsa_65 verify** edge + known-bug corpora — incl. ML-DSA context binding,
   modified-signature, zero-key, and incorrect-length rejection), `ClassicalKatTest`
   (Ed25519 RFC 8032, X25519 RFC 7748).
-- **KEM Double Ratchet (Phase 5):** `KemDoubleRatchetTest` (round-trips, out-of-order,
+- **KEM Double Ratchet (the single ratchet):** `KemDoubleRatchetTest` (round-trips, out-of-order,
   simultaneous steps, tamper/replay, **post-compromise healing**), `KemRatchetCodecTest`
   (wire frame + session persistence round-trips), `KemRatchetManagerTest` (store-backed,
-  initiator-first auto-bootstrap, healing through persistence). `RatchetManagerTest` still
-  covers the symmetric SAS/media path.
+  initiator-first auto-bootstrap, healing through persistence, **SAS agreement + media-at-rest
+  key** now folded in), `CryptoAttacks` (adversarial: replay/reflection/forgery/garbage). The
+  symmetric `RatchetManager` and its tests have been retired.
 
 ## App ✅
 

@@ -5,7 +5,6 @@ import com.aura.crypto.HybridCiphertext
 import com.aura.crypto.HybridKem
 import com.aura.crypto.KemRatchetManager
 import com.aura.crypto.PrekeyManager
-import com.aura.crypto.RatchetManager
 import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.db.ContactEntity
@@ -26,7 +25,6 @@ class ReceiverPairing @Inject constructor(
     private val kem: HybridKem,
     private val pairingCrypto: PairingCrypto,
     private val pairingSignal: PairingSignal,
-    private val ratchet: RatchetManager,
     private val kemRatchet: KemRatchetManager,
     private val prekeys: PrekeyManager,
     private val contactDao: ContactDao,
@@ -125,9 +123,9 @@ class ReceiverPairing @Inject constructor(
         // sharedSecretB64 holds the finished pairing root (forward-secret when prekeys
         // were used at request time). Seed the ratchet straight from it.
         val root = Base64.decode(contact.sharedSecretB64, Base64.NO_WRAP)
-        // KEM message ratchet (responder — receives first); seed before the root is wiped.
-        kemRatchet.seed(contactNodeIdHex, root.copyOf(), iAmInitiator = false)
-        ratchet.seedFromSharedSecret(contactNodeIdHex, myNodeIdHex, contactNodeIdHex, root)   // wipes root
+        // Single KEM ratchet (responder — receives first). Derives the SAS fingerprint +
+        // media-at-rest key from the root and wipes the root before returning.
+        kemRatchet.seed(contactNodeIdHex, root, iAmInitiator = false)
         contactDao.markVerify(contactNodeIdHex, PairState.VERIFY)
         notifier.cancelContactRequest()
 

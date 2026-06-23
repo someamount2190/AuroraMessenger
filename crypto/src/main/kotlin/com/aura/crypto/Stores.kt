@@ -12,49 +12,17 @@ package com.aura.crypto
 
 // ── Ratchet persistence ─────────────────────────────────────────────────────────
 
-/** Per-contact forward-secret ratchet state (mirrors the host's stored row). */
-data class RatchetState(
-    val contactNodeIdHex: String,
-    val sendChainKeyB64: String,
-    val sendN: Long,
-    val recvChainKeyB64: String,
-    val recvN: Long,
-    val sasFingerprintB64: String,
-    val mediaKeyB64: String
-)
-
-/** A message key kept for a skipped (out-of-order) ratchet counter. */
-data class SkippedKey(
-    val contactNodeIdHex: String,
-    val n: Long,
-    val messageKeyB64: String
-)
-
 /**
- * Persistence for the post-quantum KEM Double Ratchet ([KemRatchetManager]). The whole
+ * Persistence for the post-quantum KEM Double Ratchet ([KemRatchetManager]). One opaque blob
+ * per contact holds the static SAS fingerprint + media-at-rest key followed by the whole
  * serialized [KemDoubleRatchet.Session] (root, chains, ratchet keypair, peer key, skipped
- * cache) is stored as one opaque blob per contact — the host backs this with an
- * SQLCipher-encrypted row. Replaces the symmetric [RatchetStore]'s field/skipped model when
- * the KEM ratchet is wired into the transport.
+ * cache); the host backs this with an SQLCipher-encrypted row.
  */
 interface KemSessionStore {
     suspend fun load(contactNodeIdHex: String): ByteArray?
     suspend fun save(contactNodeIdHex: String, session: ByteArray)
     suspend fun delete(contactNodeIdHex: String)
     suspend fun deleteAll()
-}
-
-interface RatchetStore {
-    suspend fun upsertState(state: RatchetState)
-    suspend fun state(nodeIdHex: String): RatchetState?
-    suspend fun putSkipped(key: SkippedKey)
-    suspend fun skipped(nodeIdHex: String, n: Long): SkippedKey?
-    suspend fun deleteSkipped(nodeIdHex: String, n: Long)
-    suspend fun pruneSkipped(nodeIdHex: String, keep: Int)
-    suspend fun deleteState(nodeIdHex: String)
-    suspend fun deleteSkippedForContact(nodeIdHex: String)
-    suspend fun deleteAllState()
-    suspend fun deleteAllSkipped()
 }
 
 // ── Prekey persistence ──────────────────────────────────────────────────────────

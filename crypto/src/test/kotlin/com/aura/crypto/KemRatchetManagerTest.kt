@@ -3,7 +3,9 @@ package com.aura.crypto
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -103,5 +105,53 @@ class KemRatchetManagerTest {
 
         assertNotNull(a.open(BOB, secret.bytes, aad))            // real Alice still reads it
         assertNull(stolen.open(BOB, secret.bytes, aad))          // frozen snapshot cannot
+    }
+
+    // ── SAS + media-at-rest key (folded in from the retired symmetric ratchet) ──────────────
+
+    @Test fun sas_bothPeersAgree_forSameTarget_andSurvivesRatcheting() = runBlocking {
+        val a = manager(); val b = manager()
+        a.seed(BOB, ROOT.copyOf(), iAmInitiator = true)
+        b.seed(ALICE, ROOT.copyOf(), iAmInitiator = false)
+
+        // Each shows the code bound to a given identity; both compute the SAME value from the
+        // shared root fingerprint, so the mutual cross-check matches.
+        val target = "peer-identity"
+        val codeFromA = a.sasCodeFor(BOB, target)
+        val codeFromB = b.sasCodeFor(ALICE, target)
+        assertNotNull(codeFromA)
+        assertEquals(codeFromA, codeFromB)
+        assertTrue(Regex("\\d{6}").matches(codeFromA!!))
+
+        // Advancing the wire ratchet must not disturb the static SAS fingerprint.
+        a.sealNext(BOB, "msg".toByteArray(), aad)
+        assertEquals(codeFromA, a.sasCodeFor(BOB, target))
+    }
+
+    @Test fun sas_differsWhenRootsDiffer() = runBlocking {
+        val a = manager(); val b = manager()
+        a.seed(BOB, ByteArray(32) { 1 }, iAmInitiator = true)
+        b.seed(ALICE, ByteArray(32) { 2 }, iAmInitiator = false)  // a MITM ⇒ different root
+        assertNotEquals(a.sasCodeFor(BOB, "x"), b.sasCodeFor(ALICE, "x"))
+    }
+
+    @Test fun mediaKey_presentAfterSeed_stableAcrossRatcheting_andLocalOnly() = runBlocking {
+        val a = manager(); val b = manager()
+        a.seed(BOB, ROOT.copyOf(), iAmInitiator = true)
+        b.seed(ALICE, ROOT.copyOf(), iAmInitiator = false)
+
+        val mk = a.mediaKey(BOB)
+        assertNotNull(mk); assertEquals(32, mk!!.size)
+        a.sealNext(BOB, "msg".toByteArray(), aad)
+        assertContentEquals(mk, a.mediaKey(BOB))                 // survives ratchet steps
+
+        // Local-only: never transported, so the two peers hold DIFFERENT media keys.
+        assertFalse(mk.contentEquals(b.mediaKey(ALICE)!!))
+    }
+
+    @Test fun sasAndMediaKey_nullForUnseededContact() = runBlocking {
+        val a = manager()
+        assertNull(a.sasCodeFor("nobody", "x"))
+        assertNull(a.mediaKey("nobody"))
     }
 }

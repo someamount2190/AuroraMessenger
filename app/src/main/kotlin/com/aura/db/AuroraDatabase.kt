@@ -12,17 +12,16 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 // Entities and DAOs live in per-aggregate files in this package:
 //   Contacts.kt  (ContactEntity, PairState, ContactDao)
 //   Messages.kt  (MessageEntity, UnreadByContact, MessageDao)
-//   Ratchet.kt   (RatchetStateEntity, RatchetSkippedKeyEntity, RatchetDao)
+//   Ratchet.kt   (KemRatchetEntity, RatchetDao)
 //   Prekeys.kt   (PrekeyEntity, PrekeyDao)
 //   MeshPeers.kt (MeshPeerEntity, MeshPeerDao)
 
 @Database(
     entities = [
         ContactEntity::class, MessageEntity::class, MeshPeerEntity::class,
-        RatchetStateEntity::class, RatchetSkippedKeyEntity::class, PrekeyEntity::class,
-        KemRatchetEntity::class
+        PrekeyEntity::class, KemRatchetEntity::class
     ],
-    version = 9,
+    version = 10,
     // Export the schema so version 6 became the migration baseline: from here on,
     // changes ship as @AutoMigration / Migration objects that PRESERVE user data
     // instead of wiping it. (Schema JSONs land in app/schemas — commit them.)
@@ -54,8 +53,22 @@ abstract class AuroraDatabase : RoomDatabase() {
                 // migrate from) are allowed to wipe. From v6 onward every bump MUST ship a
                 // migration, so a real user's contacts/messages survive app updates.
                 .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5)
-                .addMigrations(MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                 .build()
+        }
+
+        /**
+         * v9→v10: retire the symmetric ratchet. Its `ratchet_state` (chains + SAS fingerprint +
+         * media key) and `ratchet_skipped` tables are dropped; the single `KemDoubleRatchet`
+         * (`kem_ratchet`) now carries the SAS fingerprint and media key in its own blob. Pre-FIPS
+         * data is already reset by `StartupMigrations` on upgrade (clean break / re-pair), so this
+         * drop is lossless for any real user.
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `ratchet_state`")
+                db.execSQL("DROP TABLE IF EXISTS `ratchet_skipped`")
+            }
         }
 
         /**

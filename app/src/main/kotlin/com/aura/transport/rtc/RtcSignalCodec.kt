@@ -1,7 +1,7 @@
 package com.aura.transport.rtc
 
 import android.util.Base64
-import com.aura.crypto.RatchetManager
+import com.aura.crypto.KemRatchetManager
 import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.identity.IdentityStore
@@ -13,10 +13,10 @@ import javax.inject.Inject
 /**
  * Sealed transport for WebRTC **data-channel** signaling — the message-transport
  * twin of [com.aura.call.CallSignalCodec]. Each inner signal
- * (`offer`/`answer`/`ice`/`bye`) is sealed with the conversation's forward-secret
- * ratchet (XChaCha20-Poly1305, AAD-bound to the directed pair) and relayed through
- * the rendezvous `/signal` queue — the server only ever sees ciphertext, and once
- * ICE connects it falls off the path entirely.
+ * (`offer`/`answer`/`ice`/`bye`) is sealed with the conversation's post-quantum
+ * [KemRatchetManager] (XChaCha20-Poly1305 under per-message ratchet keys, AAD-bound to
+ * the directed pair) and relayed through the rendezvous `/signal` queue — the server
+ * only ever sees ciphertext, and once ICE connects it falls off the path entirely.
  *
  * The signal `type` is `"rtc"` (dispatched by [com.aura.network.SyncEngine]); the
  * AAD label `aura-rtc-v1` keeps these signals cryptographically distinct from call
@@ -25,7 +25,7 @@ import javax.inject.Inject
 class RtcSignalCodec @Inject constructor(
     private val identityManager: IdentityStore,
     private val contactDao: ContactDao,
-    private val ratchet: RatchetManager,
+    private val kemRatchet: KemRatchetManager,
     private val rendezvousClient: Rendezvous,
     private val settings: AuroraSettings
 ) {
@@ -37,12 +37,11 @@ class RtcSignalCodec @Inject constructor(
         val identity = identityManager.getOrCreate()
         contactDao.byNodeId(peerNodeIdHex) ?: return false
         val aad = aad(identity.nodeId.toHex(), peerNodeIdHex)
-        val sealed = ratchet.sealNext(peerNodeIdHex, inner.toString().toByteArray(), aad) ?: return false
+        val sealed = kemRatchet.sealNext(peerNodeIdHex, inner.toString().toByteArray(), aad) ?: return false
         val payload = JSONObject()
             .put("type", "rtc")
             .put("from", identity.nodeId.toHex())
             .put("to", peerNodeIdHex)
-            .put("n", sealed.n)
             .put("sealed", Base64.encodeToString(sealed.bytes, Base64.NO_WRAP))
         // Surface a failed post so RtcTransport can tear the half-open session down and
         // retry, instead of treating an unsent offer/answer/ICE as delivered.
@@ -58,8 +57,7 @@ class RtcSignalCodec @Inject constructor(
         if (json.optString("to") != identity.nodeId.toHex()) return null
         contactDao.byNodeId(from) ?: return null
         val sealed = Base64.decode(json.optString("sealed"), Base64.NO_WRAP)
-        val n = json.optLong("n", -1)
-        val plaintext = ratchet.open(from, n, sealed, aad(from, identity.nodeId.toHex())) ?: return null
+        val plaintext = kemRatchet.open(from, sealed, aad(from, identity.nodeId.toHex())) ?: return null
         val inner = try { JSONObject(String(plaintext)) } catch (e: Exception) { return null }
         return Incoming(from, inner)
     }

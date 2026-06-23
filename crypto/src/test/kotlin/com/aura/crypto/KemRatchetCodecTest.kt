@@ -24,7 +24,7 @@ class KemRatchetCodecTest {
         dr.initSender(root.copyOf(), bobInitial.publicKey) to dr.initReceiver(root.copyOf(), bobInitial)
     }
 
-    /** Round-trip a session through its serialized form (what a RatchetStore would hold). */
+    /** Round-trip a session through its serialized form (what a KemSessionStore would hold). */
     private fun persist(s: KemDoubleRatchet.Session): KemDoubleRatchet.Session =
         KemRatchetCodec.sessionFromBytes(KemRatchetCodec.sessionToBytes(s))
 

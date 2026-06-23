@@ -40,7 +40,7 @@ Measured over `app/src/main` + `crypto/src/main` (Kotlin):
 The long tail is healthy — most files are small and single-purpose. The mass sits
 in a handful of screen/coordinator files at the top. The crypto core
 (`crypto/src/main`) is *not* a monolith concern: its files are bounded and
-single-responsibility (`HybridSigner` 326, `HybridKem` 275, `RatchetManager` 217),
+single-responsibility (`HybridSigner` 326, `HybridKem` 275, `KemDoubleRatchet`/`KemRatchetManager`),
 which is consistent with the Android-free, independently-reviewable core the
 architecture doc describes. The monolith pressure is concentrated in the **UI and
 the pairing/call coordinators**.

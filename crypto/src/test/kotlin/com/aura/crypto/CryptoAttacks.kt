@@ -1,6 +1,6 @@
 package com.aura.crypto
 
-import com.aura.crypto.testutil.FakeRatchetStore
+import com.aura.crypto.testutil.FakeKemSessionStore
 import kotlinx.coroutines.test.runTest
 import org.bouncycastle.crypto.generators.Ed25519KeyPairGenerator
 import org.bouncycastle.crypto.params.Ed25519KeyGenerationParameters
@@ -66,57 +66,52 @@ class CryptoAttacks {
         assertFalse(a.copyOfRange(24, a.size).contentEquals(b.copyOfRange(24, b.size)))
     }
 
-    // ════════════════════════════ Ratchet ══════════════════════════════════════
+    // ═══════════════════ KEM Double Ratchet (KemRatchetManager) ═════════════════
+    // The single per-contact ratchet for messages, media, and call/RTC signaling.
+    // (Out-of-order / skip-bound / healing behaviour is covered in KemDoubleRatchetTest.)
 
     private val ALICE = "aaaa"; private val BOB = "bbbb"; private val aad = "f".toByteArray()
-    private suspend fun pair(): Pair<RatchetManager, RatchetManager> {
-        val a = RatchetManager(FakeRatchetStore(), hkdf, cipher)
-        val b = RatchetManager(FakeRatchetStore(), hkdf, cipher)
-        a.seedFromSharedSecret(BOB, ALICE, BOB, ByteArray(32) { 9 })
-        b.seedFromSharedSecret(ALICE, BOB, ALICE, ByteArray(32) { 9 })
+    private fun mgr() = KemRatchetManager(FakeKemSessionStore(), HybridKem(), hkdf, cipher)
+    private suspend fun pair(): Pair<KemRatchetManager, KemRatchetManager> {
+        val a = mgr(); val b = mgr()
+        a.seed(BOB, ByteArray(32) { 9 }, iAmInitiator = true)     // Alice initiates → sends first
+        b.seed(ALICE, ByteArray(32) { 9 }, iAmInitiator = false)  // Bob receives
         return a to b
     }
 
     @Test fun ratchet_replay_isRejected() = runTest {
         val (a, b) = pair()
         val m = a.sealNext(BOB, "hi".toByteArray(), aad)!!
-        assertTrue(b.open(ALICE, m.n, m.bytes, aad) != null)
-        assertNull(b.open(ALICE, m.n, m.bytes, aad), "replay of consumed counter")
+        assertTrue(b.open(ALICE, m.bytes, aad) != null)
+        assertNull(b.open(ALICE, m.bytes, aad), "replay of consumed frame")
     }
 
     /** Reflection: a frame I sent, bounced back to me, must not decrypt (send≠recv chain). */
     @Test fun ratchet_reflection_isRejected() = runTest {
         val (a, _) = pair()
         val m = a.sealNext(BOB, "hi".toByteArray(), aad)!!   // Alice's SEND chain
-        assertNull(a.open(BOB, m.n, m.bytes, aad), "own frame on own recv chain must fail")
+        assertNull(a.open(BOB, m.bytes, aad), "own frame on own recv chain must fail")
     }
 
     @Test fun ratchet_crossContactKey_isRejected() = runTest {
         val (a, b) = pair()
         val m = a.sealNext(BOB, "hi".toByteArray(), aad)!!
-        // open under a different, unrelated contact id
-        assertNull(b.open("cccc", m.n, m.bytes, aad))
-    }
-
-    @Test fun ratchet_skipFloodDoS_isBounded() = runTest {
-        val (a, b) = pair()
-        val m = a.sealNext(BOB, "hi".toByteArray(), aad)!!
-        assertNull(b.open(ALICE, RatchetManager.MAX_SKIP_AHEAD + 1, m.bytes, aad), "skip-flood refused")
-        assertTrue(b.open(ALICE, m.n, m.bytes, aad) != null, "state intact after refused flood")
+        // open under a different, unseeded contact id
+        assertNull(b.open("cccc", m.bytes, aad))
     }
 
     @Test fun ratchet_forgedFrame_doesNotAdvanceChain() = runTest {
         val (a, b) = pair()
         val m = a.sealNext(BOB, "hi".toByteArray(), aad)!!
         val forged = m.bytes.copyOf().also { it[it.size - 1] = (it[it.size - 1].toInt() xor 1).toByte() }
-        assertNull(b.open(ALICE, m.n, forged, aad))
-        assertTrue(b.open(ALICE, m.n, m.bytes, aad) != null, "genuine frame still opens (chain not burned)")
+        assertNull(b.open(ALICE, forged, aad))
+        assertTrue(b.open(ALICE, m.bytes, aad) != null, "genuine frame still opens (chain not burned)")
     }
 
     @Test fun ratchet_garbageInput_failsClosed() = runTest {
         val (_, b) = pair()
-        assertNull(b.open(ALICE, 0, ByteArray(8), aad))      // too short
-        assertNull(b.open(ALICE, 0, ByteArray(200) { 0xAB.toByte() }, aad))  // junk
+        assertNull(b.open(ALICE, ByteArray(8), aad))      // too short
+        assertNull(b.open(ALICE, ByteArray(200) { 0xAB.toByte() }, aad))  // junk
     }
 
     // ════════════════════════════ HKDF ═════════════════════════════════════════

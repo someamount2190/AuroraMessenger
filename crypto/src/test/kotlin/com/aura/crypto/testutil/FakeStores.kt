@@ -1,60 +1,20 @@
 package com.aura.crypto.testutil
 
+import com.aura.crypto.KemSessionStore
 import com.aura.crypto.PrekeyRecord
 import com.aura.crypto.PrekeyStore
-import com.aura.crypto.RatchetState
-import com.aura.crypto.RatchetStore
-import com.aura.crypto.SkippedKey
 
 /**
- * In-memory [RatchetStore] for tests — no database, no Android. Faithful to the
- * contract the real Room adapter must satisfy (see StoreAdapterConformanceTest in
- * the app androidTest set). [pruneSkipped] retains the `keep` newest counters.
+ * In-memory [KemSessionStore] for tests — no database, no Android. Stores one opaque
+ * per-contact ratchet blob, exactly like the real Room adapter.
  */
-class FakeRatchetStore : RatchetStore {
-    val states = HashMap<String, RatchetState>()
-    val skips = HashMap<Pair<String, Long>, SkippedKey>()
+class FakeKemSessionStore : KemSessionStore {
+    val sessions = HashMap<String, ByteArray>()
 
-    override suspend fun upsertState(state: RatchetState) {
-        states[state.contactNodeIdHex] = state
-    }
-
-    override suspend fun state(nodeIdHex: String): RatchetState? = states[nodeIdHex]
-
-    override suspend fun putSkipped(key: SkippedKey) {
-        skips[key.contactNodeIdHex to key.n] = key
-    }
-
-    override suspend fun skipped(nodeIdHex: String, n: Long): SkippedKey? = skips[nodeIdHex to n]
-
-    override suspend fun deleteSkipped(nodeIdHex: String, n: Long) {
-        skips.remove(nodeIdHex to n)
-    }
-
-    override suspend fun pruneSkipped(nodeIdHex: String, keep: Int) {
-        val forContact = skips.values.filter { it.contactNodeIdHex == nodeIdHex }
-            .sortedByDescending { it.n }
-        forContact.drop(keep).forEach { skips.remove(it.contactNodeIdHex to it.n) }
-    }
-
-    override suspend fun deleteState(nodeIdHex: String) {
-        states.remove(nodeIdHex)
-    }
-
-    override suspend fun deleteSkippedForContact(nodeIdHex: String) {
-        skips.keys.filter { it.first == nodeIdHex }.toList().forEach { skips.remove(it) }
-    }
-
-    override suspend fun deleteAllState() {
-        states.clear()
-    }
-
-    override suspend fun deleteAllSkipped() {
-        skips.clear()
-    }
-
-    fun skippedCountFor(nodeIdHex: String): Int =
-        skips.keys.count { it.first == nodeIdHex }
+    override suspend fun load(contactNodeIdHex: String): ByteArray? = sessions[contactNodeIdHex]
+    override suspend fun save(contactNodeIdHex: String, session: ByteArray) { sessions[contactNodeIdHex] = session }
+    override suspend fun delete(contactNodeIdHex: String) { sessions.remove(contactNodeIdHex) }
+    override suspend fun deleteAll() { sessions.clear() }
 }
 
 /** In-memory [PrekeyStore] for tests (used by the T2 PrekeyManager suite). */

@@ -13,11 +13,14 @@
 > **Also done:** Phase 4b (legacy no-FS fallback removed — pairing now fails closed without a
 > verified PQXDH bundle) and the test-vector / audit-scope doc refresh (§7).
 >
-> **Phase 5 (post-quantum asymmetric ratchet): WIRED IN.** The X-Wing KEM Double Ratchet is
-> the live message ratchet — `KemDoubleRatchet` + `KemRatchetCodec` + store-backed
-> `KemRatchetManager` drive `MessageSender`/`TcpMessageServer`/`MediaTransfer`, persisted to the
-> `kem_ratchet` table (DB v9); pairing seeds initiator/responder and the initiator
-> auto-bootstraps on pairing completion. `RatchetManager` now serves only SAS + media-at-rest.
+> **Phase 5 (post-quantum asymmetric ratchet): WIRED IN — now the ONLY ratchet.** The X-Wing
+> KEM Double Ratchet is the single per-contact ratchet — `KemDoubleRatchet` + `KemRatchetCodec`
+> + store-backed `KemRatchetManager` drive `MessageSender`/`TcpMessageServer`/`MediaTransfer`
+> **and** call/RTC signaling (`CallSignalCodec`/`RtcSignalCodec`), persisted to the `kem_ratchet`
+> table (DB v10); pairing seeds initiator/responder and the initiator auto-bootstraps on pairing
+> completion. The old symmetric `RatchetManager` has been **retired**: its SAS fingerprint and
+> media-at-rest key are folded into the KEM ratchet's session blob, and the `ratchet_state` /
+> `ratchet_skipped` tables are dropped (MIGRATION_9_10).
 > So Aurora's messages now have **post-compromise security (healing)** on the wire. It remains
 > **bespoke protocol crypto** that should get dedicated review before production reliance
 > (see [`PQ_RATCHET_DESIGN.md`](PQ_RATCHET_DESIGN.md)).

@@ -3,13 +3,11 @@ package com.aura.db
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.aura.crypto.KemSessionStore
 import com.aura.crypto.PrekeyRecord
 import com.aura.crypto.PrekeyStore
-import com.aura.crypto.RatchetState
-import com.aura.crypto.RatchetStore
-import com.aura.crypto.SkippedKey
+import com.aura.crypto.testutil.FakeKemSessionStore
 import com.aura.crypto.testutil.FakePrekeyStore
-import com.aura.crypto.testutil.FakeRatchetStore
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -22,7 +20,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 /**
- * Proves the Room adapters (`RoomRatchetStore`, `RoomPrekeyStore`) honour the SAME
+ * Proves the Room adapters (`RoomKemSessionStore`, `RoomPrekeyStore`) honour the SAME
  * contract as the in-memory test fakes — i.e. the POJO↔entity mapping is faithful.
  * The identical assertion blocks run against both implementations.
  */
@@ -40,29 +38,23 @@ class StoreAdapterConformanceTest {
 
     @After fun tearDown() = db.close()
 
-    private fun ratchetState(id: String) =
-        RatchetState(id, "send", 3, "recv", 4, "fp", "mk")
+    private suspend fun kemSessionContract(store: KemSessionStore) {
+        val blobA = ByteArray(64) { it.toByte() }
+        val blobB = ByteArray(8) { 0x7F }
+        store.save("a", blobA)
+        store.save("b", blobB)
+        assertNotNull(store.load("a"))
+        assertEquals(blobA.toList(), store.load("a")!!.toList())   // exact bytes round-trip
 
-    private suspend fun ratchetContract(store: RatchetStore) {
-        store.upsertState(ratchetState("a"))
-        val got = store.state("a")!!
-        assertEquals(3, got.sendN); assertEquals("recv", got.recvChainKeyB64)
+        store.save("a", blobB)                                     // upsert replaces
+        assertEquals(blobB.toList(), store.load("a")!!.toList())
 
-        store.putSkipped(SkippedKey("a", 1, "k1"))
-        store.putSkipped(SkippedKey("a", 2, "k2"))
-        store.putSkipped(SkippedKey("a", 3, "k3"))
-        assertNotNull(store.skipped("a", 2))
-        store.deleteSkipped("a", 2)
-        assertNull(store.skipped("a", 2))
+        store.delete("a")
+        assertNull(store.load("a"))
+        assertNotNull(store.load("b"))                             // unrelated row untouched
 
-        store.pruneSkipped("a", keep = 1)            // keep newest (n=3)
-        assertNotNull(store.skipped("a", 3))
-        assertNull(store.skipped("a", 1))
-
-        store.deleteState("a")
-        assertNull(store.state("a"))
-        store.deleteSkippedForContact("a")
-        assertNull(store.skipped("a", 3))
+        store.deleteAll()
+        assertNull(store.load("b"))
     }
 
     private fun prekey(id: String, kind: String, created: Long) =
@@ -85,9 +77,9 @@ class StoreAdapterConformanceTest {
         assertEquals(0, store.unusedOpkCount())
     }
 
-    @Test fun ratchetStore_fake_satisfiesContract() = runBlocking { ratchetContract(FakeRatchetStore()) }
+    @Test fun kemSessionStore_fake_satisfiesContract() = runBlocking { kemSessionContract(FakeKemSessionStore()) }
 
-    @Test fun ratchetStore_room_satisfiesContract() = runBlocking { ratchetContract(RoomRatchetStore(db.ratchetDao())) }
+    @Test fun kemSessionStore_room_satisfiesContract() = runBlocking { kemSessionContract(RoomKemSessionStore(db.ratchetDao())) }
 
     @Test fun prekeyStore_fake_satisfiesContract() = runBlocking { prekeyContract(FakePrekeyStore()) }
 

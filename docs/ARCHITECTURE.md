@@ -11,7 +11,7 @@ flowchart TB
   subgraph DevA["Device A (Android)"]
     UA["UI · Jetpack Compose"]
     VMA["ViewModels / Coordinators<br/>(PairingCoordinator, CallController, SyncEngine)"]
-    CA["com.aura.crypto<br/>(HybridKem, HybridSigner, SymmetricCipher,<br/>Hkdf, RatchetManager, PrekeyManager)"]
+    CA["com.aura.crypto<br/>(HybridKem, HybridSigner, SymmetricCipher,<br/>Hkdf, KemRatchetManager, PrekeyManager)"]
     STA["Storage<br/>(SQLCipher DB, EncryptedSharedPreferences,<br/>Android Keystore master key)"]
     NA["Network<br/>(RendezvousClient, MessageSender/Receiver, WebRTC)"]
     WA["WakeService (foreground)"]
@@ -34,7 +34,7 @@ flowchart TB
 ```
 
 The crypto core (`crypto/`, `com.aura:aura-crypto`) is **Android-free** and persists through
-storage interfaces (`RatchetStore`, `PrekeyStore`) the app implements — so it can be
+storage interfaces (`KemSessionStore`, `PrekeyStore`) the app implements — so it can be
 reviewed and tested in isolation from the platform.
 
 ## 2. Trust-boundary data-flow diagram (DFD)

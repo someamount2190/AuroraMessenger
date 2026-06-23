@@ -3,7 +3,6 @@ package com.aura.media
 import android.content.Context
 import android.net.Uri
 import android.util.Base64
-import com.aura.crypto.RatchetManager
 import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.db.MessageDao
@@ -42,8 +41,7 @@ import javax.inject.Singleton
 class MediaTransfer @Inject constructor(
     @ApplicationContext private val context: Context,
     private val identityManager: IdentityStore,
-    private val ratchet: RatchetManager,           // media-at-rest key (root-derived)
-    private val kemRatchet: com.aura.crypto.KemRatchetManager,   // shared per-contact message ratchet (wire)
+    private val kemRatchet: com.aura.crypto.KemRatchetManager,   // wire seal/open + media-at-rest key
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val mediaStore: EncryptedMediaStore,
@@ -93,7 +91,7 @@ class MediaTransfer @Inject constructor(
         if (plaintext.size > EncryptedMediaStore.MAX_MEDIA_BYTES) return null
         // Local-only key: media is encrypted at rest with a key that survives the
         // ratchet (it never travels), so old media stays viewable on this device.
-        val mediaKey = ratchet.mediaKey(contactNodeIdHex) ?: return null
+        val mediaKey = kemRatchet.mediaKey(contactNodeIdHex) ?: return null
 
         val messageId = UUID.randomUUID().toString()
         setProgress(messageId, 0.05f)
@@ -152,7 +150,7 @@ class MediaTransfer @Inject constructor(
     suspend fun flushPendingMedia() = flushMutex.withLock {
         for (msg in messageDao.pendingMedia()) {
             val path = msg.mediaPath ?: continue
-            val mediaKey = ratchet.mediaKey(msg.contactNodeIdHex) ?: continue
+            val mediaKey = kemRatchet.mediaKey(msg.contactNodeIdHex) ?: continue
             val plaintext = mediaStore.readDecrypted(path, mediaKey) ?: continue
             attemptDeliver(msg.id, msg.contactNodeIdHex, msg.type, plaintext, msg.durationMs)
         }
@@ -266,7 +264,7 @@ class MediaTransfer @Inject constructor(
 
         // Unseal the wire blob, then re-encrypt at rest with the local media key.
         val plaintext = kemRatchet.open(from, sealed, MEDIA_WIRE_AAD) ?: return null
-        val mediaKey = ratchet.mediaKey(from) ?: return null
+        val mediaKey = kemRatchet.mediaKey(from) ?: return null
         val path = mediaStore.writeEncrypted(messageId, plaintext, mediaKey)
         messageDao.insert(
             MessageEntity(
@@ -287,7 +285,7 @@ class MediaTransfer @Inject constructor(
 
     /** Decrypt a stored media file for preview (returns plaintext bytes). */
     suspend fun decryptForPreview(contactNodeIdHex: String, path: String): ByteArray? {
-        val mediaKey = ratchet.mediaKey(contactNodeIdHex) ?: return null
+        val mediaKey = kemRatchet.mediaKey(contactNodeIdHex) ?: return null
         return mediaStore.readDecrypted(path, mediaKey)
     }
 

@@ -25,19 +25,13 @@ class CryptoStackDemoNative {
     private fun show(s: String) = Log.i("CRYPTODEMO", s)
     private fun ByteArray.head(n: Int = 40) = toHex().take(n) + "…"
 
-    /** Minimal in-memory ratchet store for the E2E demo. */
-    private class MemStore : RatchetStore {
-        val st = HashMap<String, RatchetState>(); val sk = HashMap<Pair<String, Long>, SkippedKey>()
-        override suspend fun upsertState(state: RatchetState) { st[state.contactNodeIdHex] = state }
-        override suspend fun state(nodeIdHex: String) = st[nodeIdHex]
-        override suspend fun putSkipped(key: SkippedKey) { sk[key.contactNodeIdHex to key.n] = key }
-        override suspend fun skipped(nodeIdHex: String, n: Long) = sk[nodeIdHex to n]
-        override suspend fun deleteSkipped(nodeIdHex: String, n: Long) { sk.remove(nodeIdHex to n) }
-        override suspend fun pruneSkipped(nodeIdHex: String, keep: Int) {}
-        override suspend fun deleteState(nodeIdHex: String) { st.remove(nodeIdHex) }
-        override suspend fun deleteSkippedForContact(nodeIdHex: String) {}
-        override suspend fun deleteAllState() { st.clear() }
-        override suspend fun deleteAllSkipped() { sk.clear() }
+    /** Minimal in-memory KEM-ratchet session store for the E2E demo. */
+    private class MemStore : KemSessionStore {
+        val sessions = HashMap<String, ByteArray>()
+        override suspend fun load(contactNodeIdHex: String) = sessions[contactNodeIdHex]
+        override suspend fun save(contactNodeIdHex: String, session: ByteArray) { sessions[contactNodeIdHex] = session }
+        override suspend fun delete(contactNodeIdHex: String) { sessions.remove(contactNodeIdHex) }
+        override suspend fun deleteAll() { sessions.clear() }
     }
 
     @Test fun stack4_kyberX25519_kem() = runBlocking {
@@ -84,16 +78,16 @@ class CryptoStackDemoNative {
         // 2) HKDF → 32-byte pairing root (both sides identical)
         val rootBob = hkdf.derive(ikm = enc.sharedSecret, info = "aura-e2e-demo".toByteArray())
         val rootAlice = hkdf.derive(ikm = aliceSs, info = "aura-e2e-demo".toByteArray())
-        // 3) seed forward-secret ratchets from the root
-        val rmBob = RatchetManager(MemStore(), hkdf, SymmetricCipher())
-        val rmAlice = RatchetManager(MemStore(), hkdf, SymmetricCipher())
+        // 3) seed the KEM double ratchets from the root (Bob initiates / sends first)
+        val rmBob = KemRatchetManager(MemStore(), kem, hkdf, SymmetricCipher())
+        val rmAlice = KemRatchetManager(MemStore(), kem, hkdf, SymmetricCipher())
         val A = "aaaa"; val B = "bbbb"
-        rmBob.seedFromSharedSecret(A, B, A, rootBob.copyOf())
-        rmAlice.seedFromSharedSecret(B, A, B, rootAlice.copyOf())
+        rmBob.seed(A, rootBob.copyOf(), iAmInitiator = true)
+        rmAlice.seed(B, rootAlice.copyOf(), iAmInitiator = false)
         // 4) Bob encrypts a message, Alice decrypts
         val pt = "End-to-end: PQ KEM → HKDF → ratchet → XChaCha20".toByteArray()
         val sealed = rmBob.sealNext(A, pt, "aad".toByteArray())!!
-        val dec = rmAlice.open(B, sealed.n, sealed.bytes, "aad".toByteArray())
+        val dec = rmAlice.open(B, sealed.bytes, "aad".toByteArray())
 
         show("── 7) FULL E2E: Kyber/X25519 → HKDF → ratchet → XChaCha20 ──")
         show("   roots match : ${rootAlice.contentEquals(rootBob)}")

@@ -15,7 +15,6 @@ import com.aura.db.KemRatchetEntity
 import com.aura.db.MessageDao
 import com.aura.db.MessageEntity
 import com.aura.db.RatchetDao
-import com.aura.db.RatchetStateEntity
 import com.aura.di.IoDispatcher
 import com.aura.identity.IdentityStore
 import kotlinx.coroutines.CoroutineDispatcher
@@ -57,8 +56,8 @@ class Backups @Inject constructor(
             .put("v", DATA_VERSION)
             .put("identity", identityToJson(identity))
             .put("contacts", JSONArray().apply { contactDao.activeForBackup().forEach { put(contactToJson(it)) } })
-            .put("ratchets", JSONArray().apply { ratchetDao.allStatesForBackup().forEach { put(ratchetToJson(it)) } })
-            // KEM Double Ratchet sessions — restored so a device MOVE continues conversations
+            // KEM Double Ratchet sessions (the only ratchet now; carries the SAS fingerprint +
+            // media-at-rest key in-blob). Restored so a device MOVE continues conversations
             // without re-pairing (Aurora is one-device-per-identity, so restore is a migration).
             .put("kemRatchets", JSONArray().apply {
                 ratchetDao.allKemForBackup().forEach {
@@ -102,14 +101,18 @@ class Backups @Inject constructor(
                     ?: throw IllegalStateException("Wrong passphrase or corrupt backup")
 
                 val inner = JSONObject(String(plaintext, Charsets.UTF_8))
+                val dataVersion = inner.optInt("v", 1)
                 identityManager.restore(jsonToIdentity(inner.getJSONObject("identity")))
                 inner.getJSONArray("contacts").let { a -> for (i in 0 until a.length()) contactDao.upsert(jsonToContact(a.getJSONObject(i))) }
-                inner.getJSONArray("ratchets").let { a -> for (i in 0 until a.length()) ratchetDao.upsertState(jsonToRatchet(a.getJSONObject(i))) }
-                // Optional (absent in v1 backups): restore the KEM ratchet sessions.
-                inner.optJSONArray("kemRatchets")?.let { a ->
-                    for (i in 0 until a.length()) {
-                        val o = a.getJSONObject(i)
-                        ratchetDao.kemUpsert(KemRatchetEntity(o.getString("c"), o.getString("s")))
+                // KEM ratchet sessions. The v3 blob format folds the SAS fingerprint + media key
+                // into the session, so only restore from v3+ backups; older sessions are stale
+                // under the retired symmetric ratchet and re-pair instead.
+                if (dataVersion >= 3) {
+                    inner.optJSONArray("kemRatchets")?.let { a ->
+                        for (i in 0 until a.length()) {
+                            val o = a.getJSONObject(i)
+                            ratchetDao.kemUpsert(KemRatchetEntity(o.getString("c"), o.getString("s")))
+                        }
                     }
                 }
                 inner.getJSONArray("messages").let { a -> for (i in 0 until a.length()) messageDao.insert(jsonToMessage(a.getJSONObject(i))) }
@@ -176,19 +179,6 @@ class Backups @Inject constructor(
         isInitiator = j.optBoolean("isInitiator", false)
     )
 
-    private fun ratchetToJson(r: RatchetStateEntity) = JSONObject()
-        .put("contactNodeIdHex", r.contactNodeIdHex)
-        .put("sendChainKeyB64", r.sendChainKeyB64).put("sendN", r.sendN)
-        .put("recvChainKeyB64", r.recvChainKeyB64).put("recvN", r.recvN)
-        .put("sasFingerprintB64", r.sasFingerprintB64).put("mediaKeyB64", r.mediaKeyB64)
-
-    private fun jsonToRatchet(j: JSONObject) = RatchetStateEntity(
-        contactNodeIdHex = j.getString("contactNodeIdHex"),
-        sendChainKeyB64 = j.getString("sendChainKeyB64"), sendN = j.getLong("sendN"),
-        recvChainKeyB64 = j.getString("recvChainKeyB64"), recvN = j.getLong("recvN"),
-        sasFingerprintB64 = j.getString("sasFingerprintB64"), mediaKeyB64 = j.getString("mediaKeyB64")
-    )
-
     private fun messageToJson(m: MessageEntity) = JSONObject()
         .put("id", m.id).put("contactNodeIdHex", m.contactNodeIdHex).put("fromMe", m.fromMe)
         .put("body", m.body).put("timestampMs", m.timestampMs).put("status", m.status)
@@ -218,7 +208,7 @@ class Backups @Inject constructor(
     private companion object {
         const val MAGIC = "AURABK"
         const val CONTAINER_VERSION = 1
-        const val DATA_VERSION = 2   // v2 adds the KEM ratchet sessions (kemRatchets)
+        const val DATA_VERSION = 3   // v3: single KEM ratchet (SAS fp + media key in-blob); no symmetric ratchet
         const val SALT_BYTES = 16
         val BACKUP_AAD = "aura-backup-v1".toByteArray()
         // Argon2id: ~64 MB, 3 passes — strong against offline guessing, fine for one-shot on a phone.

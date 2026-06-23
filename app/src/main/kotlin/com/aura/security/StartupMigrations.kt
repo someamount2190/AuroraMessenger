@@ -39,8 +39,6 @@ class StartupMigrations @Inject constructor(
                 database.contactDao().deleteAll()
                 database.messageDao().deleteAll()
                 database.meshPeerDao().deleteAll()
-                database.ratchetDao().deleteAllSkipped()
-                database.ratchetDao().deleteAllState()
                 database.ratchetDao().kemDeleteAll()
                 database.prekeyDao().deleteAll()
             }

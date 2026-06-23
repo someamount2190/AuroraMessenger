@@ -1,6 +1,6 @@
 package com.aura.pairing
 
-import com.aura.crypto.RatchetManager
+import com.aura.crypto.KemRatchetManager
 import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.db.ContactEraser
@@ -17,7 +17,7 @@ import javax.inject.Inject
  */
 class VerifyPairing @Inject constructor(
     private val identityManager: IdentityStore,
-    private val ratchet: RatchetManager,
+    private val kemRatchet: KemRatchetManager,
     private val pairingCrypto: PairingCrypto,
     private val pairingSignal: PairingSignal,
     private val contactDao: ContactDao,
@@ -36,7 +36,7 @@ class VerifyPairing @Inject constructor(
     /** The 6-digit code THIS device shows on the verify screen (its own SAS code). */
     suspend fun myVerifyCode(contactNodeIdHex: String): String? {
         val myNodeIdHex = identityManager.getOrCreate().nodeId.toHex()
-        return ratchet.sasCodeFor(contactNodeIdHex, myNodeIdHex)
+        return kemRatchet.sasCodeFor(contactNodeIdHex, myNodeIdHex)
     }
 
     /**
@@ -51,7 +51,7 @@ class VerifyPairing @Inject constructor(
         val myNodeIdHex = identity.nodeId.toHex()
 
         // The peer shows the code bound to THEIR identity; we compute the same locally.
-        val expected = ratchet.sasCodeFor(contactNodeIdHex, contactNodeIdHex) ?: return@runCatching false
+        val expected = kemRatchet.sasCodeFor(contactNodeIdHex, contactNodeIdHex) ?: return@runCatching false
         if (!pairingCrypto.sasEquals(code.trim(), expected)) {
             contactDao.incVerifyAttempts(contactNodeIdHex)
             val attempts = contactDao.byNodeId(contactNodeIdHex)?.verifyAttempts ?: 0
