@@ -45,6 +45,36 @@ which is consistent with the Android-free, independently-reviewable core the
 architecture doc describes. The monolith pressure is concentrated in the **UI and
 the pairing/call coordinators**.
 
+## Decomposition status
+
+The behaviour-neutral, mechanically-verifiable splits have been applied; the
+stateful coordinators are designed below but deferred (see rationale).
+
+| File | Before | After | Status |
+|---|---:|---:|---|
+| `ConversationScreen.kt` | 1133 | 565 + MessageBubble/MediaViewer/VerifyPanel | ✅ split |
+| `AuroraDatabase.kt` | 468 | 52 + Contacts/Messages/Ratchet/Prekeys/MeshPeers | ✅ split |
+| `SettingsScreen.kt` | 650 | 252 + SettingsComponents | ✅ split |
+| `HomeScreen.kt` | 477 | 124 + HomeSearch/ContactList/HomeWidgets | ✅ split |
+| `AuroraApp.kt` | 386 | 249 + AuroraNavGraph | ✅ split |
+| `CallController.kt` | 469 | — | ⏸ designed, deferred |
+| `AuroraRendezvousServer.kt` | 417 | — | ⏸ designed, deferred |
+| `RendezvousClient.kt` | 411 | — | ⏸ designed, deferred |
+| `PairingCoordinator.kt` | 528 | — | ⏸ designed, deferred |
+
+**Why the coordinators are deferred.** The five completed splits move
+self-contained units (composables, Room entities/DAOs) between files in the same
+package — visibility widens from file-private to `internal`, no logic moves, and
+correctness is verifiable by inspection. The four deferred files are stateful
+classes whose decomposition means extracting *collaborators that share mutable,
+concurrency- and security-sensitive state* (ratchet seeding, signature checks, ICE
+recovery timers, call state). That is precisely the work this document flags as
+"do carefully, with the test suites green before and after" — and it must be done
+against a compiler and the `PairingCrypto*` / `CallLog` / wire-frame tests, which
+the authoring environment could not run. Their target file architecture is
+specified in the findings below so the split is a mechanical follow-up once it can
+be compiled and tested.
+
 ## Findings, by priority
 
 Priority weighs size × number of mixed concerns × how security-sensitive the file
@@ -219,24 +249,32 @@ handler composables.
   bounded, single-responsibility, Android-free units with dedicated tests. The
   same discipline applied to the coordinators is the target end-state.
 
-## Recommended order of work
+## Remaining work (deferred coordinator splits)
 
-Sequenced by value-to-risk. Each step is independently shippable and should keep
-the existing test suite green.
+The five UI/DB splits are done (see Decomposition status). The remaining four are
+sequenced by value-to-risk; each is independently shippable and **must** keep the
+existing test suite green — run the splits against a compiler, not by inspection.
 
-1. **`ConversationScreen.kt`** — pure mechanical file-split (bubbles, media viewer,
-   verify panel). Biggest line reduction for the least risk; no logic touched.
-2. **`SettingsScreen.kt` / `HomeScreen.kt` / `AuroraApp.kt`** — UI-only section/
-   widget extraction. Low risk, improves the most-edited surfaces.
-3. **`AuroraDatabase.kt`** — split entities/DAOs into per-aggregate files; tighten
-   the stringly-typed `type`/flag fields. Mechanical, compiler-checked.
-4. **`CallController.kt`** — extract the recovery-timer manager and call logger;
-   keep the WebRTC session ownership where it is.
-5. **`PairingCoordinator.kt`** — last, and most carefully: separate the
-   pairing-crypto layer from the state machine so it maps 1:1 to the crypto spec
-   and is unit-testable. Do this with `PairingCryptoTest` /
+1. **`AuroraDatabase` / UI screens** — ✅ done.
+2. **`CallController.kt`** — extract `IceRecoveryHandler` (the four recovery
+   timers + ICE-restart policy) and a `CallLogger` (the `logCall` MessageEntity
+   construction); keep WebRTC session ownership and the `CallState`/`CallInfo`
+   nested types where they are (19 references across 8 files key off
+   `CallController.CallState`, so promoting them to top-level is a separate,
+   reference-wide rename — not part of the file split).
+3. **`RendezvousClient.kt`** — extract an HTTP/auth helper (the repeated
+   `X-Drain-*` header construction), a `PrekeyClient`, and a `SignalQueueClient`;
+   normalise the `Result`/`null`/throw error contract while you're in there.
+4. **`AuroraRendezvousServer.kt`** — extract a `Router`, a `SignatureVerifier`, a
+   `RateLimiter` (unifying `allowFind`/`allowSignalPost`), and per-resource stores
+   (registration / signal queue / prekey).
+5. **`PairingCoordinator.kt`** — last and most carefully: separate the
+   pairing-crypto layer (FS vs legacy encapsulation, root derivation, prekey
+   consumption, secret wiping) from the state machine so it maps 1:1 to the crypto
+   spec and is unit-testable, plus a thin signal-dispatch helper for the
+   near-duplicate control-signal methods. Do this with `PairingCryptoTest` /
    `PairingCryptoAttacks` green before and after.
 
-None of the above changes behaviour; this audit recommends decomposition only,
-and explicitly does **not** recommend bundling logic changes into the same
-commits as the moves.
+None of this changes behaviour; this audit recommends decomposition only, and
+explicitly does **not** recommend bundling logic changes into the same commits as
+the moves.
