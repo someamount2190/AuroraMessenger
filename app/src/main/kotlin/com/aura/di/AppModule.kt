@@ -80,6 +80,15 @@ object AppModule {
     ): RatchetManager = RatchetManager(store, hkdf, cipher)
 
     @Provides @Singleton
+    fun provideKemSessionStore(dao: com.aura.db.RatchetDao): com.aura.crypto.KemSessionStore =
+        com.aura.db.RoomKemSessionStore(dao)
+
+    @Provides @Singleton
+    fun provideKemRatchetManager(
+        store: com.aura.crypto.KemSessionStore, kem: HybridKem, hkdf: Hkdf, cipher: SymmetricCipher
+    ): com.aura.crypto.KemRatchetManager = com.aura.crypto.KemRatchetManager(store, kem, hkdf, cipher)
+
+    @Provides @Singleton
     fun providePrekeyManager(
         store: PrekeyStore, kem: HybridKem, signer: HybridSigner
     ): PrekeyManager = PrekeyManager(store, kem, signer)

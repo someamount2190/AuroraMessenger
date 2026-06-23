@@ -41,10 +41,35 @@ data class RatchetSkippedKeyEntity(
     val messageKeyB64: String
 )
 
+/**
+ * Per-contact **post-quantum KEM Double Ratchet** session (Phase 5). The entire serialized
+ * `KemDoubleRatchet.Session` — root, send/receive chains, the X-Wing ratchet keypair, the peer's
+ * ratchet key, and the skipped-message cache — is stored as one opaque Base64 blob and rewritten
+ * on each message. Backs the crypto module's `KemSessionStore`.
+ */
+@Entity(tableName = "kem_ratchet")
+data class KemRatchetEntity(
+    @PrimaryKey val contactNodeIdHex: String,
+    val sessionB64: String
+)
+
 @Dao
 interface RatchetDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertState(state: RatchetStateEntity)
+
+    // ── KEM Double Ratchet session blob (Phase 5) ──
+    @Query("SELECT sessionB64 FROM kem_ratchet WHERE contactNodeIdHex = :nodeIdHex")
+    suspend fun kemSession(nodeIdHex: String): String?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun kemUpsert(row: KemRatchetEntity)
+
+    @Query("DELETE FROM kem_ratchet WHERE contactNodeIdHex = :nodeIdHex")
+    suspend fun kemDelete(nodeIdHex: String)
+
+    @Query("DELETE FROM kem_ratchet")
+    suspend fun kemDeleteAll()
 
     @Query("SELECT * FROM ratchet_state WHERE contactNodeIdHex = :nodeIdHex")
     suspend fun state(nodeIdHex: String): RatchetStateEntity?

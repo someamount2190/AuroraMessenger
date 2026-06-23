@@ -1,7 +1,7 @@
 package com.aura.transport
 
 import android.util.Base64
-import com.aura.crypto.RatchetManager
+import com.aura.crypto.KemRatchetManager
 import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.db.MessageDao
@@ -34,7 +34,7 @@ import javax.inject.Singleton
 @Singleton
 class TcpMessageServer @Inject constructor(
     private val identityManager: IdentityProvider,
-    private val ratchet: RatchetManager,
+    private val ratchet: KemRatchetManager,
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val settings: AuroraSettings,
@@ -152,10 +152,9 @@ class TcpMessageServer @Inject constructor(
         }
 
         val sealed = Base64.decode(frame.optString("sealed"), Base64.NO_WRAP)
-        val n = frame.optLong("n", -1)
         val aad = "aura-msg-v1|$from|$to".toByteArray()
 
-        val plaintext = ratchet.open(from, n, sealed, aad) ?: return null
+        val plaintext = ratchet.open(from, sealed, aad) ?: return null
         val inner = try { JSONObject(String(plaintext, Charsets.UTF_8)) } catch (e: Exception) { return null }
 
         val entity = MessageEntity(
@@ -186,9 +185,8 @@ class TcpMessageServer @Inject constructor(
         contactDao.byNodeId(from) ?: return null   // ignore frames from unknown peers
 
         val sealed = Base64.decode(frame.optString("sealed"), Base64.NO_WRAP)
-        val n = frame.optLong("n", -1)
         val aad = "aura-ctl-v1|$from|$myNodeId".toByteArray()
-        val plaintext = ratchet.open(from, n, sealed, aad) ?: return null
+        val plaintext = ratchet.open(from, sealed, aad) ?: return null
         val inner = try { JSONObject(String(plaintext, Charsets.UTF_8)) } catch (e: Exception) { return null }
 
         // Route sealed control messages by their inner "ctl" type.

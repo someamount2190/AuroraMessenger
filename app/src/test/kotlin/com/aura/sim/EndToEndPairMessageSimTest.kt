@@ -4,14 +4,15 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.aura.crypto.Hkdf
-import com.aura.crypto.RatchetManager
+import com.aura.crypto.HybridKem
+import com.aura.crypto.KemRatchetManager
 import com.aura.crypto.SymmetricCipher
 import com.aura.crypto.toHex
 import com.aura.db.AuroraDatabase
 import com.aura.db.ContactEntity
 import com.aura.db.MessageEntity
 import com.aura.db.PairState
-import com.aura.db.RoomRatchetStore
+import com.aura.db.RoomKemSessionStore
 import com.aura.network.InMemoryRendezvous
 import com.aura.settings.AuroraSettings
 import com.aura.testutil.FakeIdentityProvider
@@ -58,7 +59,7 @@ class EndToEndPairMessageSimTest {
     private class Peer(
         val hex: String,
         val db: AuroraDatabase,
-        val ratchet: RatchetManager,
+        val kem: KemRatchetManager,
         val server: TcpMessageServer,
         val sender: MessageSender
     )
@@ -75,26 +76,27 @@ class EndToEndPairMessageSimTest {
 
         val aliceDb = inMemoryDb(ctx)
         val bobDb = inMemoryDb(ctx)
-        val aliceRatchet = RatchetManager(RoomRatchetStore(aliceDb.ratchetDao()), Hkdf(), cipher)
-        val bobRatchet = RatchetManager(RoomRatchetStore(bobDb.ratchetDao()), Hkdf(), cipher)
+        val aliceKem = KemRatchetManager(RoomKemSessionStore(aliceDb.ratchetDao()), HybridKem(), Hkdf(), cipher)
+        val bobKem = KemRatchetManager(RoomKemSessionStore(bobDb.ratchetDao()), HybridKem(), Hkdf(), cipher)
 
-        // ── "Pairing" outcome: seed both ratchets from one shared root + store contacts.
+        // ── "Pairing" outcome: seed the KEM ratchet from one shared root (Alice is the
+        // initiator and sends first / auto-bootstraps; Bob the responder) + store contacts.
         val root = ByteArray(32) { 0x5A }
-        aliceRatchet.seedFromSharedSecret(bobId.hex, aliceId.hex, bobId.hex, root.copyOf())
-        bobRatchet.seedFromSharedSecret(aliceId.hex, bobId.hex, aliceId.hex, root.copyOf())
+        aliceKem.seed(bobId.hex, root.copyOf(), iAmInitiator = true)
+        bobKem.seed(aliceId.hex, root.copyOf(), iAmInitiator = false)
         aliceDb.contactDao().upsert(activeContact(bobId.hex, "Bob"))
         bobDb.contactDao().upsert(activeContact(aliceId.hex, "Alice"))
 
         // ── Each peer's inbound server (FrameInbox) over its own DB/ratchet.
-        val aliceServer = TcpMessageServer(aliceId, aliceRatchet, aliceDb.contactDao(), aliceDb.messageDao(), settings, pulse, Dispatchers.Unconfined)
-        val bobServer = TcpMessageServer(bobId, bobRatchet, bobDb.contactDao(), bobDb.messageDao(), settings, pulse, Dispatchers.Unconfined)
+        val aliceServer = TcpMessageServer(aliceId, aliceKem, aliceDb.contactDao(), aliceDb.messageDao(), settings, pulse, Dispatchers.Unconfined)
+        val bobServer = TcpMessageServer(bobId, bobKem, bobDb.contactDao(), bobDb.messageDao(), settings, pulse, Dispatchers.Unconfined)
 
         // ── Cross-wire the data plane: each peer's sender delivers into the other's server.
-        val aliceSender = MessageSender(aliceId, aliceRatchet, aliceDb.contactDao(), aliceDb.messageDao(), aliceDb.meshPeerDao(), rendezvous, settings, InMemoryPeerTransport(bobServer), Dispatchers.Unconfined)
-        val bobSender = MessageSender(bobId, bobRatchet, bobDb.contactDao(), bobDb.messageDao(), bobDb.meshPeerDao(), rendezvous, settings, InMemoryPeerTransport(aliceServer), Dispatchers.Unconfined)
+        val aliceSender = MessageSender(aliceId, aliceKem, aliceDb.contactDao(), aliceDb.messageDao(), aliceDb.meshPeerDao(), rendezvous, settings, InMemoryPeerTransport(bobServer), Dispatchers.Unconfined)
+        val bobSender = MessageSender(bobId, bobKem, bobDb.contactDao(), bobDb.messageDao(), bobDb.meshPeerDao(), rendezvous, settings, InMemoryPeerTransport(aliceServer), Dispatchers.Unconfined)
 
-        alice = Peer(aliceId.hex, aliceDb, aliceRatchet, aliceServer, aliceSender)
-        bob = Peer(bobId.hex, bobDb, bobRatchet, bobServer, bobSender)
+        alice = Peer(aliceId.hex, aliceDb, aliceKem, aliceServer, aliceSender)
+        bob = Peer(bobId.hex, bobDb, bobKem, bobServer, bobSender)
     }
 
     @Test

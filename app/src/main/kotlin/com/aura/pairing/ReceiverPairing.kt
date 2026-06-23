@@ -3,6 +3,7 @@ package com.aura.pairing
 import android.util.Base64
 import com.aura.crypto.HybridCiphertext
 import com.aura.crypto.HybridKem
+import com.aura.crypto.KemRatchetManager
 import com.aura.crypto.PrekeyManager
 import com.aura.crypto.RatchetManager
 import com.aura.crypto.toHex
@@ -26,6 +27,7 @@ class ReceiverPairing @Inject constructor(
     private val pairingCrypto: PairingCrypto,
     private val pairingSignal: PairingSignal,
     private val ratchet: RatchetManager,
+    private val kemRatchet: KemRatchetManager,
     private val prekeys: PrekeyManager,
     private val contactDao: ContactDao,
     private val eraser: ContactEraser,
@@ -123,6 +125,8 @@ class ReceiverPairing @Inject constructor(
         // sharedSecretB64 holds the finished pairing root (forward-secret when prekeys
         // were used at request time). Seed the ratchet straight from it.
         val root = Base64.decode(contact.sharedSecretB64, Base64.NO_WRAP)
+        // KEM message ratchet (responder — receives first); seed before the root is wiped.
+        kemRatchet.seed(contactNodeIdHex, root.copyOf(), iAmInitiator = false)
         ratchet.seedFromSharedSecret(contactNodeIdHex, myNodeIdHex, contactNodeIdHex, root)   // wipes root
         contactDao.markVerify(contactNodeIdHex, PairState.VERIFY)
         notifier.cancelContactRequest()

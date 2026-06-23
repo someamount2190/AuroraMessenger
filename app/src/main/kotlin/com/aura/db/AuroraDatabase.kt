@@ -19,9 +19,10 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 @Database(
     entities = [
         ContactEntity::class, MessageEntity::class, MeshPeerEntity::class,
-        RatchetStateEntity::class, RatchetSkippedKeyEntity::class, PrekeyEntity::class
+        RatchetStateEntity::class, RatchetSkippedKeyEntity::class, PrekeyEntity::class,
+        KemRatchetEntity::class
     ],
-    version = 8,
+    version = 9,
     // Export the schema so version 6 became the migration baseline: from here on,
     // changes ship as @AutoMigration / Migration objects that PRESERVE user data
     // instead of wiping it. (Schema JSONs land in app/schemas — commit them.)
@@ -53,7 +54,7 @@ abstract class AuroraDatabase : RoomDatabase() {
                 // migrate from) are allowed to wipe. From v6 onward every bump MUST ship a
                 // migration, so a real user's contacts/messages survive app updates.
                 .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5)
-                .addMigrations(MIGRATION_7_8)
+                .addMigrations(MIGRATION_7_8, MIGRATION_8_9)
                 .build()
         }
 
@@ -62,6 +63,18 @@ abstract class AuroraDatabase : RoomDatabase() {
          * old kyber/x25519 pairs. Prekeys regenerate on next publish, so dropping them is
          * lossless for the user; contacts and messages are left intact.
          */
+        /** v8→v9 (Phase 5): add the `kem_ratchet` table holding the post-quantum KEM Double
+         *  Ratchet session blob per contact. Additive; existing data untouched. */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `kem_ratchet` (" +
+                        "`contactNodeIdHex` TEXT NOT NULL, `sessionB64` TEXT NOT NULL, " +
+                        "PRIMARY KEY(`contactNodeIdHex`))"
+                )
+            }
+        }
+
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("DROP TABLE IF EXISTS `prekeys`")

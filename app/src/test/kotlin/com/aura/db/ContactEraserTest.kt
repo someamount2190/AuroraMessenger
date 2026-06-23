@@ -40,8 +40,11 @@ class ContactEraserTest {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(ctx, AuroraDatabase::class.java).allowMainThreadQueries().build()
         ratchet = RatchetManager(RoomRatchetStore(db.ratchetDao()), Hkdf(), cipher)
+        val kemRatchet = com.aura.crypto.KemRatchetManager(
+            com.aura.db.RoomKemSessionStore(db.ratchetDao()), com.aura.crypto.HybridKem(), Hkdf(), cipher
+        )
         media = EncryptedMediaStore(ctx, cipher)
-        eraser = ContactEraser(db.contactDao(), db.messageDao(), ratchet, media)
+        eraser = ContactEraser(db.contactDao(), db.messageDao(), ratchet, kemRatchet, media)
 
         db.contactDao().upsert(
             ContactEntity(node, "Alice", "k", "e", createdAtMs = 1, pairingSent = true)

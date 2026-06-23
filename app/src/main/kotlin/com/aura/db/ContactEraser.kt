@@ -16,6 +16,7 @@ class ContactEraser @Inject constructor(
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val ratchet: RatchetManager,
+    private val kemRatchet: com.aura.crypto.KemRatchetManager,
     private val mediaStore: EncryptedMediaStore
 ) {
     suspend fun wipe(nodeIdHex: String) {
@@ -23,7 +24,9 @@ class ContactEraser @Inject constructor(
         messageDao.mediaPathsForContact(nodeIdHex).forEach { mediaStore.delete(it) }
         // 2. Messages.
         messageDao.deleteForContact(nodeIdHex)
-        // 3. Cryptographically erase the ratchet (chain keys + SAS fp + skipped keys).
+        // 3. Cryptographically erase both ratchets: the KEM message ratchet (root, chains,
+        //    ratchet keypair, skipped cache) and the RatchetManager's SAS fp + media key.
+        kemRatchet.wipe(nodeIdHex)
         ratchet.wipe(nodeIdHex)
         // 4. The contact row itself.
         contactDao.deleteByNodeId(nodeIdHex)

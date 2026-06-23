@@ -1,0 +1,449 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 9,
+    "identityHash": "d590e07b37100af79c49ef78b6be09f9",
+    "entities": [
+      {
+        "tableName": "contacts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`nodeIdHex` TEXT NOT NULL, `displayName` TEXT NOT NULL, `kemPubB64` TEXT NOT NULL, `ed25519PubB64` TEXT NOT NULL, `dilithiumPubB64` TEXT, `sharedSecretB64` TEXT NOT NULL, `createdAtMs` INTEGER NOT NULL, `pairingSent` INTEGER NOT NULL, `disappearingTimer` TEXT NOT NULL, `nicknameSet` INTEGER NOT NULL, `pairState` TEXT NOT NULL, `isInitiator` INTEGER NOT NULL, `iVerified` INTEGER NOT NULL, `theyVerified` INTEGER NOT NULL, `verifyAttempts` INTEGER NOT NULL, PRIMARY KEY(`nodeIdHex`))",
+        "fields": [
+          {
+            "fieldPath": "nodeIdHex",
+            "columnName": "nodeIdHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kemPubB64",
+            "columnName": "kemPubB64",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ed25519PubB64",
+            "columnName": "ed25519PubB64",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dilithiumPubB64",
+            "columnName": "dilithiumPubB64",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sharedSecretB64",
+            "columnName": "sharedSecretB64",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "createdAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pairingSent",
+            "columnName": "pairingSent",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "disappearingTimer",
+            "columnName": "disappearingTimer",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nicknameSet",
+            "columnName": "nicknameSet",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pairState",
+            "columnName": "pairState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isInitiator",
+            "columnName": "isInitiator",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "iVerified",
+            "columnName": "iVerified",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "theyVerified",
+            "columnName": "theyVerified",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verifyAttempts",
+            "columnName": "verifyAttempts",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "nodeIdHex"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "messages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `contactNodeIdHex` TEXT NOT NULL, `fromMe` INTEGER NOT NULL, `body` TEXT NOT NULL, `timestampMs` INTEGER NOT NULL, `status` TEXT NOT NULL, `type` TEXT NOT NULL, `mediaPath` TEXT, `expiresAtMs` INTEGER, `replyToId` TEXT, `replyPreview` TEXT, `myReaction` TEXT, `theirReaction` TEXT, `durationMs` INTEGER, `read` INTEGER NOT NULL, `callStatus` TEXT, `sealedB64` TEXT, `ratchetN` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contactNodeIdHex",
+            "columnName": "contactNodeIdHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fromMe",
+            "columnName": "fromMe",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "body",
+            "columnName": "body",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestampMs",
+            "columnName": "timestampMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mediaPath",
+            "columnName": "mediaPath",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "expiresAtMs",
+            "columnName": "expiresAtMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "replyToId",
+            "columnName": "replyToId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "replyPreview",
+            "columnName": "replyPreview",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "myReaction",
+            "columnName": "myReaction",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "theirReaction",
+            "columnName": "theirReaction",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "read",
+            "columnName": "read",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "callStatus",
+            "columnName": "callStatus",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sealedB64",
+            "columnName": "sealedB64",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "ratchetN",
+            "columnName": "ratchetN",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "mesh_peers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ipPort` TEXT NOT NULL, `ip` TEXT NOT NULL, `port` INTEGER NOT NULL, `firstSeenMs` INTEGER NOT NULL, `lastSeenMs` INTEGER NOT NULL, PRIMARY KEY(`ipPort`))",
+        "fields": [
+          {
+            "fieldPath": "ipPort",
+            "columnName": "ipPort",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ip",
+            "columnName": "ip",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "port",
+            "columnName": "port",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstSeenMs",
+            "columnName": "firstSeenMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeenMs",
+            "columnName": "lastSeenMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ipPort"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "ratchet_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`contactNodeIdHex` TEXT NOT NULL, `sendChainKeyB64` TEXT NOT NULL, `sendN` INTEGER NOT NULL, `recvChainKeyB64` TEXT NOT NULL, `recvN` INTEGER NOT NULL, `sasFingerprintB64` TEXT NOT NULL, `mediaKeyB64` TEXT NOT NULL, PRIMARY KEY(`contactNodeIdHex`))",
+        "fields": [
+          {
+            "fieldPath": "contactNodeIdHex",
+            "columnName": "contactNodeIdHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sendChainKeyB64",
+            "columnName": "sendChainKeyB64",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sendN",
+            "columnName": "sendN",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recvChainKeyB64",
+            "columnName": "recvChainKeyB64",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recvN",
+            "columnName": "recvN",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sasFingerprintB64",
+            "columnName": "sasFingerprintB64",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mediaKeyB64",
+            "columnName": "mediaKeyB64",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "contactNodeIdHex"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "ratchet_skipped",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`contactNodeIdHex` TEXT NOT NULL, `n` INTEGER NOT NULL, `messageKeyB64` TEXT NOT NULL, PRIMARY KEY(`contactNodeIdHex`, `n`))",
+        "fields": [
+          {
+            "fieldPath": "contactNodeIdHex",
+            "columnName": "contactNodeIdHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "n",
+            "columnName": "n",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "messageKeyB64",
+            "columnName": "messageKeyB64",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "contactNodeIdHex",
+            "n"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "prekeys",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`prekeyId` TEXT NOT NULL, `kind` TEXT NOT NULL, `kemPubB64` TEXT NOT NULL, `kemPrivB64` TEXT NOT NULL, `createdAtMs` INTEGER NOT NULL, `usedAtMs` INTEGER, PRIMARY KEY(`prekeyId`))",
+        "fields": [
+          {
+            "fieldPath": "prekeyId",
+            "columnName": "prekeyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kemPubB64",
+            "columnName": "kemPubB64",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kemPrivB64",
+            "columnName": "kemPrivB64",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "createdAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "usedAtMs",
+            "columnName": "usedAtMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "prekeyId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "kem_ratchet",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`contactNodeIdHex` TEXT NOT NULL, `sessionB64` TEXT NOT NULL, PRIMARY KEY(`contactNodeIdHex`))",
+        "fields": [
+          {
+            "fieldPath": "contactNodeIdHex",
+            "columnName": "contactNodeIdHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionB64",
+            "columnName": "sessionB64",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "contactNodeIdHex"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd590e07b37100af79c49ef78b6be09f9')"
+    ]
+  }
+}

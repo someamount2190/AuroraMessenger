@@ -42,7 +42,8 @@ import javax.inject.Singleton
 class MediaTransfer @Inject constructor(
     @ApplicationContext private val context: Context,
     private val identityManager: IdentityStore,
-    private val ratchet: RatchetManager,
+    private val ratchet: RatchetManager,           // media-at-rest key (root-derived)
+    private val kemRatchet: com.aura.crypto.KemRatchetManager,   // shared per-contact message ratchet (wire)
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val mediaStore: EncryptedMediaStore,
@@ -174,7 +175,7 @@ class MediaTransfer @Inject constructor(
         val contact = contactDao.byNodeId(contactNodeIdHex) ?: return false
         // Seal the blob for the wire with a fresh ratchet key (distinct from the
         // at-rest key), so intercepted media gets the same forward secrecy as text.
-        val sealed = ratchet.sealNext(contactNodeIdHex, plaintext, MEDIA_WIRE_AAD) ?: return false
+        val sealed = kemRatchet.sealNext(contactNodeIdHex, plaintext, MEDIA_WIRE_AAD) ?: return false
 
         // The sealed bytes are streamed as mediachunk frames by the transport, so the start
         // frame carries only metadata (no blob); each transport stamps its own chunk count.
@@ -261,11 +262,10 @@ class MediaTransfer @Inject constructor(
         }
 
         val type = meta.optString("mtype", "image")
-        val n = meta.optLong("n", -1)
         val duration = if (meta.isNull("duration")) null else meta.optLong("duration")
 
         // Unseal the wire blob, then re-encrypt at rest with the local media key.
-        val plaintext = ratchet.open(from, n, sealed, MEDIA_WIRE_AAD) ?: return null
+        val plaintext = kemRatchet.open(from, sealed, MEDIA_WIRE_AAD) ?: return null
         val mediaKey = ratchet.mediaKey(from) ?: return null
         val path = mediaStore.writeEncrypted(messageId, plaintext, mediaKey)
         messageDao.insert(

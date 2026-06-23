@@ -1,7 +1,7 @@
 package com.aura.transport
 
 import android.util.Base64
-import com.aura.crypto.RatchetManager
+import com.aura.crypto.KemRatchetManager
 import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.db.ContactEntity
@@ -37,7 +37,7 @@ import javax.inject.Singleton
 @Singleton
 class MessageSender @Inject constructor(
     private val identityManager: IdentityProvider,
-    private val ratchet: RatchetManager,
+    private val ratchet: KemRatchetManager,
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val meshPeerDao: MeshPeerDao,
