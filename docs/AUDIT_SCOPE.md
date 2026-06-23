@@ -20,6 +20,7 @@ already know about. It is the map; the territory is the source and the rest of `
 | [`docs/DEPENDENCIES.md`](DEPENDENCIES.md) · [`docs/BUILD_REPRODUCIBILITY.md`](BUILD_REPRODUCIBILITY.md) | Supply chain & build |
 | [`docs/MONOLITH_AUDIT.md`](MONOLITH_AUDIT.md) | Structural-health pass: monolithic files & decomposition plan |
 | [`docs/CRYPTO_TEST_VECTORS.md`](CRYPTO_TEST_VECTORS.md) | Per-primitive test-vector / KAT sources & applicability |
+| [`docs/CRYPTO_MIGRATION_PLAN.md`](CRYPTO_MIGRATION_PLAN.md) | Locked plan: replace hand-rolled crypto with libraries, move to FIPS PQC + X-Wing |
 | [`SECURITY.md`](../SECURITY.md) | Disclosure policy |
 
 ## System under review
