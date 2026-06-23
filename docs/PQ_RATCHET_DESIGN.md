@@ -1,11 +1,25 @@
 # Phase 5 — Post-Quantum Asymmetric Ratchet (Design Spec, FOR REVIEW)
 
-> Status: **DESIGN — NOT YET IMPLEMENTED.** This is the named, written specification that
-> [`CRYPTO_MIGRATION_PLAN.md`](CRYPTO_MIGRATION_PLAN.md) §6 requires *before* any Phase 5
-> code is written. It is **bespoke protocol crypto** and must not be self-certified: it is
-> gated on dedicated review (ideally external) before Aurora relies on it. Phase 5 is
-> **severable** — Phases 0–4b already ship a fully library-based, FIPS-PQC, pure-JVM app
-> with the existing symmetric ratchet; this adds post-compromise security on top.
+> Status: **REFERENCE IMPLEMENTATION DONE & PROVEN — NOT YET WIRED IN; PENDING REVIEW.**
+> The construction below is implemented as a self-contained, pure-JVM unit
+> ([`KemDoubleRatchet.kt`](../crypto/src/main/kotlin/com/aura/crypto/KemDoubleRatchet.kt)) and
+> proven by [`KemDoubleRatchetTest`](../crypto/src/test/kotlin/com/aura/crypto/KemDoubleRatchetTest.kt)
+> (8 tests: round-trips across many steps, out-of-order/skipped, tamper + replay rejection,
+> and the **post-compromise-security "healing"** test). It is **bespoke protocol crypto** and
+> must not be self-certified: it is gated on dedicated review (ideally external) before Aurora
+> relies on it, and it is **not yet wired into the transport** — the shipping ratchet remains
+> the symmetric [`RatchetManager`](../crypto/src/main/kotlin/com/aura/crypto/RatchetManager.kt).
+> Phase 5 is **severable** — Phases 0–4b already ship a fully library-based, FIPS-PQC, pure-JVM
+> app; this adds post-compromise security on top. Remaining work: integrate into the transport
+> frame format + persistence, and complete review.
+>
+> **KEM-DR delivery property (surfaced in implementation):** unlike DH-DR — where every header
+> carries the ratchet public key so any message of a new epoch can trigger the step — a KEM
+> step needs the *ciphertext*, which travels only in the **first** message of each epoch. So
+> the epoch's first (step) message must arrive before later messages of that epoch can be
+> decrypted; out-of-order *within* an epoch (after its step message) is handled by the skipped
+> cache. The transport already delivers in order with retransmission, so this is acceptable;
+> noted here for reviewers.
 
 ## 1. Why
 

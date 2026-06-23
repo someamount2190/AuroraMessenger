@@ -13,10 +13,13 @@
 > **Also done:** Phase 4b (legacy no-FS fallback removed — pairing now fails closed without a
 > verified PQXDH bundle) and the test-vector / audit-scope doc refresh (§7).
 >
-> **Remaining:** Phase 5 — the post-quantum asymmetric ratchet (post-compromise security).
-> It is severable and review-gated; the **design spec is written** in
-> [`PQ_RATCHET_DESIGN.md`](PQ_RATCHET_DESIGN.md) (§6 here) and must be reviewed before any
-> implementation, per the plan's own gating.
+> **Phase 5 (post-quantum asymmetric ratchet):** the X-Wing KEM Double Ratchet is now
+> **implemented as a proven, self-contained reference unit** (`KemDoubleRatchet` +
+> `KemDoubleRatchetTest`, incl. the post-compromise-security "healing" test) per
+> [`PQ_RATCHET_DESIGN.md`](PQ_RATCHET_DESIGN.md) (§6 here). It is **not yet wired into the
+> transport** and remains **review-gated** before Aurora relies on it; the shipping ratchet
+> stays the symmetric `RatchetManager`. Remaining: dedicated review, then transport/persistence
+> integration.
 
 Companion reading: [`CRYPTO_SPEC.md`](CRYPTO_SPEC.md) (current design),
 [`CRYPTO_TEST_VECTORS.md`](CRYPTO_TEST_VECTORS.md) (validation sources — updated by this plan),
