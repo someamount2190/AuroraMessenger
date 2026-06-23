@@ -106,6 +106,7 @@ dependencies {
     // Kept explicit too (belt-and-suspenders for the native JNI + classical stack).
     implementation(libs.liboqs)
     implementation(libs.bcprov)
+    implementation(libs.tink)   // XChaCha20-Poly1305 AEAD (also transitive via aura-crypto)
     implementation(libs.security.crypto)
 
     // Encrypted DB (Phase 2+)

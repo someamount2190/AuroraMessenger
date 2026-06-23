@@ -1,22 +1,30 @@
 package com.aura.crypto
 
+import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.digests.SHA3Digest
+import org.bouncycastle.crypto.generators.HKDFBytesGenerator
+import org.bouncycastle.crypto.params.HKDFParameters
 
 /**
- * HKDF-SHA3-256 implementation per RFC 5869.
+ * HKDF (RFC 5869) over **HMAC-SHA-256**, backed entirely by BouncyCastle's
+ * [HKDFBytesGenerator]. No hand-rolled extract/expand or HMAC — see
+ * [docs/CRYPTO_MIGRATION_PLAN.md].
  *
- * Uses BouncyCastle's SHA3Digest directly rather than MessageDigest.getInstance("SHA3-256")
- * because the JCE provider for SHA3-256 is not guaranteed available until API 31.
+ * The HMAC was deliberately moved from SHA3-256 to SHA-256: it is the RFC 5869
+ * standard, FIPS-aligned, and — unlike HKDF-SHA3-256 — has authoritative published
+ * known-answer tests (RFC 5869 Appendix A), which `HkdfRfc5869KatTest` now pins.
  *
- * Ported from ShadowMesh core/crypto.
+ * [sha3_256] stays: it is the hash used for `nodeId = SHA3-256(kemPub ‖ signPub)` and
+ * for KEM/pairing salts. It is a Bouncy Castle primitive, not a hand-rolled construction.
  */
 class Hkdf {
 
     /**
-     * Full HKDF: extract then expand.
+     * Full HKDF: extract then expand (RFC 5869), HMAC-SHA-256.
      *
      * @param ikm       Input key material
-     * @param salt      Optional salt (null or empty → 32 zero bytes per RFC 5869 §2.2)
+     * @param salt      Optional salt. null or empty → HashLen (32) zero bytes (RFC 5869 §2.2),
+     *                  which is exactly how BouncyCastle treats a null/empty salt.
      * @param info      Context/application-specific info bytes
      * @param outputLen Output length in bytes. Max: 255 × 32 = 8160.
      */
@@ -29,54 +37,15 @@ class Hkdf {
         require(outputLen > 0)         { "outputLen must be positive" }
         require(outputLen <= 255 * 32) { "outputLen exceeds HKDF maximum (${255 * 32})" }
 
-        val effectiveSalt = if (salt == null || salt.isEmpty()) ByteArray(32) else salt
-        val prk           = extract(effectiveSalt, ikm)
-        try {
-            return expand(prk, info, outputLen)
-        } finally {
-            prk.fill(0)
-        }
+        val hkdf = HKDFBytesGenerator(SHA256Digest())
+        // HKDFParameters maps a null/empty salt to HashLen zero bytes, matching RFC 5869 §2.2.
+        hkdf.init(HKDFParameters(ikm, salt, info))
+        val out = ByteArray(outputLen)
+        hkdf.generateBytes(out, 0, outputLen)
+        return out
     }
 
-    private fun extract(salt: ByteArray, ikm: ByteArray): ByteArray =
-        hmacSha3_256(key = salt, data = ikm)
-
-    private fun expand(prk: ByteArray, info: ByteArray, outputLen: Int): ByteArray {
-        val result  = ByteArray(outputLen)
-        var t       = ByteArray(0)
-        var offset  = 0
-        var counter = 1
-
-        while (offset < outputLen) {
-            t = hmacSha3_256(key = prk, data = t + info + byteArrayOf(counter.toByte()))
-            val toCopy = minOf(t.size, outputLen - offset)
-            t.copyInto(result, offset, 0, toCopy)
-            offset += toCopy
-            counter++
-        }
-        t.fill(0)
-        return result
-    }
-
-    /**
-     * HMAC-SHA3-256: H((K XOR opad) || H((K XOR ipad) || data))
-     *
-     * Block size for HMAC-SHA3-256 is the Keccak rate for SHA3-256:
-     * (1600 − 512) / 8 = 136 bytes (NIST FIPS 202 §B.1).
-     */
-    fun hmacSha3_256(key: ByteArray, data: ByteArray): ByteArray {
-        val blockSize = 136
-
-        val k       = if (key.size > blockSize) sha3_256(key) else key
-        val kPadded = k.copyOf(blockSize)
-
-        val ipad = ByteArray(blockSize) { (kPadded[it].toInt() xor 0x36).toByte() }
-        val opad = ByteArray(blockSize) { (kPadded[it].toInt() xor 0x5c).toByte() }
-
-        val inner = sha3_256(ipad + data)
-        return sha3_256(opad + inner)
-    }
-
+    /** SHA3-256 (FIPS 202). Backs `nodeId` and KEM/pairing salts. */
     fun sha3_256(data: ByteArray): ByteArray {
         val digest = SHA3Digest(256)
         digest.update(data, 0, data.size)
@@ -88,7 +57,7 @@ class Hkdf {
     companion object {
         /**
          * Shared singleton. Thread-safe because every call allocates a fresh
-         * SHA3Digest and the singleton holds no mutable state.
+         * generator/digest and the singleton holds no mutable state.
          */
         val instance = Hkdf()
     }

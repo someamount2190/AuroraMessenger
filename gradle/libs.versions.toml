@@ -8,7 +8,8 @@ sqlcipher       = "4.5.6"
 room            = "2.6.1"
 sqlite          = "2.4.0"
 liboqs          = "0.3.0"
-bcprov          = "1.78.1"
+bcprov          = "1.84"
+tink            = "1.18.0"
 securityCrypto  = "1.1.0-alpha06"
 coreKtx         = "1.13.0"
 sharetarget     = "1.2.0"
@@ -39,7 +40,8 @@ room-ktx                 = { module = "androidx.room:room-ktx",         version.
 room-compiler            = { module = "androidx.room:room-compiler",    version.ref = "room" }
 
 liboqs                   = { module = "org.openquantumsafe:liboqs-java", version.ref = "liboqs" }
-bcprov                   = { module = "org.bouncycastle:bcprov-jdk15to18", version.ref = "bcprov" }
+bcprov                   = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bcprov" }
+tink                     = { module = "com.google.crypto.tink:tink", version.ref = "tink" }
 security-crypto          = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 
 core-ktx                 = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }

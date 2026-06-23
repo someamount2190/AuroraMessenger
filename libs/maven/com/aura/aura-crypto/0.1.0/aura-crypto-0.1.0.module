@@ -10,7 +10,7 @@
   },
   "createdBy": {
     "gradle": {
-      "version": "8.7"
+      "version": "8.14.3"
     }
   },
   "variants": [
@@ -35,9 +35,16 @@
         },
         {
           "group": "org.bouncycastle",
-          "module": "bcprov-jdk15to18",
+          "module": "bcprov-jdk18on",
           "version": {
-            "requires": "1.78.1"
+            "requires": "1.84"
+          }
+        },
+        {
+          "group": "com.google.crypto.tink",
+          "module": "tink",
+          "version": {
+            "requires": "1.18.0"
           }
         },
         {
@@ -59,11 +66,11 @@
         {
           "name": "aura-crypto-0.1.0.jar",
           "url": "aura-crypto-0.1.0.jar",
-          "size": 146127,
-          "sha512": "55449678038d8017d77eff33f4a87d5507935d01a93b73f4bd1db264a14552217b62ddbdec4018d8bba2a53190446bfe2ac8a8b795935332e549dbff648959cb",
-          "sha256": "e733a832d619f344617614c0fed33f277e873127469b448f9efff73f0f55c0a6",
-          "sha1": "d11d476a82244c4ecd9a398c186310ef5ec5b177",
-          "md5": "18216e319dd114f32657cd5ad11b0c3d"
+          "size": 145379,
+          "sha512": "64d2b69f00bcfd7a9dc73e66003816b1a28c8ce3c2884de338b8b85eeeaed3b149fe6bbf53999a6a8948ca27ad1b9695fdca91d7b4e794824c5955394709a2f0",
+          "sha256": "2aa6b9b8760b03edc89c383f90ff4bc96a100da3147f188d964a77b655aeec2e",
+          "sha1": "eefa16051177fd49070c5c06fa2523b2548d477e",
+          "md5": "139596f57a3201c586dc02f1857204b2"
         }
       ]
     },
@@ -88,9 +95,16 @@
         },
         {
           "group": "org.bouncycastle",
-          "module": "bcprov-jdk15to18",
+          "module": "bcprov-jdk18on",
           "version": {
-            "requires": "1.78.1"
+            "requires": "1.84"
+          }
+        },
+        {
+          "group": "com.google.crypto.tink",
+          "module": "tink",
+          "version": {
+            "requires": "1.18.0"
           }
         },
         {
@@ -112,11 +126,11 @@
         {
           "name": "aura-crypto-0.1.0.jar",
           "url": "aura-crypto-0.1.0.jar",
-          "size": 146127,
-          "sha512": "55449678038d8017d77eff33f4a87d5507935d01a93b73f4bd1db264a14552217b62ddbdec4018d8bba2a53190446bfe2ac8a8b795935332e549dbff648959cb",
-          "sha256": "e733a832d619f344617614c0fed33f277e873127469b448f9efff73f0f55c0a6",
-          "sha1": "d11d476a82244c4ecd9a398c186310ef5ec5b177",
-          "md5": "18216e319dd114f32657cd5ad11b0c3d"
+          "size": 145379,
+          "sha512": "64d2b69f00bcfd7a9dc73e66003816b1a28c8ce3c2884de338b8b85eeeaed3b149fe6bbf53999a6a8948ca27ad1b9695fdca91d7b4e794824c5955394709a2f0",
+          "sha256": "2aa6b9b8760b03edc89c383f90ff4bc96a100da3147f188d964a77b655aeec2e",
+          "sha1": "eefa16051177fd49070c5c06fa2523b2548d477e",
+          "md5": "139596f57a3201c586dc02f1857204b2"
         }
       ]
     }

@@ -25,34 +25,9 @@ class HkdfTest {
         )
     }
 
-    // ── HMAC-SHA3-256 ────────────────────────────────────────────────────────
-    @Test fun hmac_outputIs32Bytes_andDeterministic() {
-        val k = "key".toByteArray(); val d = "data".toByteArray()
-        val a = hkdf.hmacSha3_256(k, d)
-        val b = hkdf.hmacSha3_256(k, d)
-        assertEquals(32, a.size)
-        assertTrue(a.contentEquals(b))
-    }
+    // RFC 5869 Appendix A known-answer vectors live in HkdfRfc5869KatTest.
 
-    @Test fun hmac_differentKey_producesDifferentTag() {
-        val d = "same data".toByteArray()
-        assertFalse(
-            hkdf.hmacSha3_256("k1".toByteArray(), d)
-                .contentEquals(hkdf.hmacSha3_256("k2".toByteArray(), d))
-        )
-    }
-
-    /** A key longer than the 136-byte block is pre-hashed: HMAC(K) == HMAC(SHA3(K)). */
-    @Test fun hmac_longKey_isPrehashed() {
-        val longKey = ByteArray(200) { it.toByte() }
-        val d = "payload".toByteArray()
-        assertTrue(
-            hkdf.hmacSha3_256(longKey, d)
-                .contentEquals(hkdf.hmacSha3_256(hkdf.sha3_256(longKey), d))
-        )
-    }
-
-    // ── derive (HKDF extract+expand) ─────────────────────────────────────────
+    // ── derive (HKDF extract+expand) — properties ────────────────────────────
     @Test fun derive_respectsRequestedLength() {
         val ikm = "ikm".toByteArray(); val info = "info".toByteArray()
         assertEquals(32, hkdf.derive(ikm = ikm, info = info).size)            // default

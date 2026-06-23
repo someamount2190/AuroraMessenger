@@ -52,13 +52,13 @@ class CryptoStackDemo {
         assertContentEquals(m1, d1); assertContentEquals(m2, d2)
     }
 
-    @Test fun stack3_hkdf_sha3_kdf() {
+    @Test fun stack3_hkdf_kdf() {
         val hkdf = Hkdf()
         val key = hkdf.derive(ikm = "shared-root".toByteArray(), info = "aura-demo".toByteArray())
-        val mac = hkdf.hmacSha3_256("k".toByteArray(), "data".toByteArray())
-        show("── 3) HKDF-SHA3-256 (key derivation) ──")
+        val digest = hkdf.sha3_256("data".toByteArray())
+        show("── 3) HKDF-SHA-256 (key derivation) + SHA3-256 (nodeId hash) ──")
         show("   derived 32B key  : ${key.toHex()}")
-        show("   HMAC-SHA3-256    : ${mac.toHex().take(40)}…")
-        assertEquals(32, key.size); assertEquals(32, mac.size)
+        show("   SHA3-256 digest  : ${digest.toHex().take(40)}…")
+        assertEquals(32, key.size); assertEquals(32, digest.size)
     }
 }

@@ -34,8 +34,14 @@ tasks.withType<Test>().configureEach {
 
 dependencies {
     // Exposed to consumers (api) so the app gets them transitively.
+    // liboqs is still here only for the not-yet-migrated HybridKem/HybridSigner
+    // (removed in the migration's Phase 4 — see docs/CRYPTO_MIGRATION_PLAN.md).
     api("org.openquantumsafe:liboqs-java:0.3.0")
-    api("org.bouncycastle:bcprov-jdk15to18:1.78.1")
+    api("org.bouncycastle:bcprov-jdk18on:1.84")
+    // XChaCha20-Poly1305 AEAD: BouncyCastle ships no XChaCha engine in any released
+    // version, so the symmetric cipher uses Tink. Plain `tink` jar (not the tink-android
+    // AAR) because this is a pure-JVM module; the app gets it transitively.
+    api("com.google.crypto.tink:tink:1.18.0")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
     // org.json is part of the Android platform at runtime, so compile against it only.
     compileOnly("org.json:json:20240303")
