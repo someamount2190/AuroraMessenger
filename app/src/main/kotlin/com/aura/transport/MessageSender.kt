@@ -11,7 +11,7 @@ import com.aura.db.MessageDao
 import com.aura.identity.IdentityStore
 import com.aura.network.Rendezvous
 import com.aura.settings.AuroraSettings
-import com.aura.transport.rtc.RtcTransport
+import com.aura.transport.rtc.PeerTransport
 import com.aura.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -43,7 +43,7 @@ class MessageSender @Inject constructor(
     private val meshPeerDao: MeshPeerDao,
     private val rendezvousClient: Rendezvous,
     private val settings: AuroraSettings,
-    private val rtcTransport: RtcTransport,
+    private val rtcTransport: PeerTransport,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private val flushMutex = Mutex()

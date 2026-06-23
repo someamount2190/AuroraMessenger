@@ -51,7 +51,7 @@ class ConversationViewModel @Inject constructor(
     private val voiceRecorder: VoiceRecorder,
     private val pairingManager: PairingCoordinator,
     private val callManager: CallController,
-    private val rtcTransport: com.aura.transport.rtc.RtcTransport,
+    private val rtcTransport: com.aura.transport.rtc.PeerTransport,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 

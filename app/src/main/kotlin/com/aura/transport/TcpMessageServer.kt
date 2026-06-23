@@ -40,7 +40,7 @@ class TcpMessageServer @Inject constructor(
     private val settings: AuroraSettings,
     private val messagePulse: MessagePulse,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
-) {
+) : FrameInbox {
     private var serverSocket: ServerSocket? = null
     private var job: Job? = null
 
@@ -128,7 +128,7 @@ class TcpMessageServer @Inject constructor(
      * null when no response is warranted (frame not for us / unknown peer / decrypt
      * fails). The caller writes the ack over whatever transport delivered the frame.
      */
-    suspend fun processFrame(frame: JSONObject): JSONObject? = when (frame.optString("t")) {
+    override suspend fun processFrame(frame: JSONObject): JSONObject? = when (frame.optString("t")) {
         "msg" -> processMsg(frame)
         "ctl" -> processCtl(frame)
         else  -> null

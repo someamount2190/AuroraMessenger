@@ -4,7 +4,7 @@ import android.content.Context
 import com.aura.crypto.toHex
 import com.aura.identity.IdentityStore
 import com.aura.network.SyncEngine
-import com.aura.transport.TcpMessageServer
+import com.aura.transport.FrameInbox
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,8 +42,8 @@ class RtcTransport @Inject constructor(
     @ApplicationContext private val context: Context,
     private val codec: RtcSignalCodec,
     private val identityManager: IdentityStore,
-    private val tcpServer: TcpMessageServer
-) {
+    private val inbox: FrameInbox
+) : PeerTransport {
     private var scope: CoroutineScope? = null
     private var factory: PeerConnectionFactory? = null
 
@@ -57,7 +57,7 @@ class RtcTransport @Inject constructor(
      * [TcpMessageServer]'s mediaHandler, transport-agnostic so the same store/ack logic
      * serves both the data channel and the TCP socket.
      */
-    var mediaHandler: (suspend (meta: JSONObject, sealed: ByteArray) -> JSONObject?)? = null
+    override var mediaHandler: (suspend (meta: JSONObject, sealed: ByteArray) -> JSONObject?)? = null
 
     private val iceServers = listOf(
         // Self-hosted STUN (coturn on the rendezvous droplet, STUN-only, dual-stack).
@@ -66,7 +66,7 @@ class RtcTransport @Inject constructor(
     )
 
     /** Per-peer connection state for the UI (pairing result + chat header). */
-    fun state(peerNodeIdHex: String): StateFlow<RtcState> = stateFlow(peerNodeIdHex)
+    override fun state(peerNodeIdHex: String): StateFlow<RtcState> = stateFlow(peerNodeIdHex)
 
     /** Registered as the "rtc" signal handler. Call once at startup (AppWiring). */
     fun init(appScope: CoroutineScope, syncEngine: SyncEngine) {
@@ -77,7 +77,7 @@ class RtcTransport @Inject constructor(
     }
 
     /** True when a data channel to [peerNodeIdHex] is open right now. */
-    fun isConnected(peerNodeIdHex: String): Boolean =
+    override fun isConnected(peerNodeIdHex: String): Boolean =
         sessions[peerNodeIdHex]?.state == RtcState.CONNECTED
 
     /**
@@ -85,7 +85,7 @@ class RtcTransport @Inject constructor(
      * up). Non-blocking — kicks off signaling in the background and returns. Callers
      * use [isConnected]/[send]; a warm session is used on the next attempt.
      */
-    fun connectAsync(peerNodeIdHex: String) {
+    override fun connectAsync(peerNodeIdHex: String) {
         val s = scope ?: return
         val existing = sessions[peerNodeIdHex]
         if (existing != null && (existing.state == RtcState.CONNECTED || existing.state.isActive)) return
@@ -106,7 +106,7 @@ class RtcTransport @Inject constructor(
     }
 
     /** Send a request [frame] over the open data channel and await its ack; null if not ready. */
-    suspend fun send(peerNodeIdHex: String, frame: JSONObject): JSONObject? {
+    override suspend fun send(peerNodeIdHex: String, frame: JSONObject): JSONObject? {
         val session = sessions[peerNodeIdHex] ?: return null
         if (session.state != RtcState.CONNECTED) return null
         return session.send(frame, SEND_ACK_TIMEOUT_MS)
@@ -116,7 +116,7 @@ class RtcTransport @Inject constructor(
      * Stream a sealed media blob over the open data channel (the same NAT-traversing path as
      * messages and calls) and await the single final ack; null if no session is connected.
      */
-    suspend fun sendMedia(peerNodeIdHex: String, startFrame: JSONObject, sealedBytes: ByteArray): JSONObject? {
+    override suspend fun sendMedia(peerNodeIdHex: String, startFrame: JSONObject, sealedBytes: ByteArray): JSONObject? {
         val session = sessions[peerNodeIdHex] ?: return null
         if (session.state != RtcState.CONNECTED) return null
         return session.sendMedia(startFrame, sealedBytes, RtcMediaChunking.CHUNK_BYTES, MEDIA_ACK_TIMEOUT_MS)
@@ -212,7 +212,7 @@ class RtcTransport @Inject constructor(
                     android.util.Log.i(TAG, "state ${peerNodeIdHex.take(8)} -> $state")
                     stateFlow(peerNodeIdHex).value = state
                 }
-                override suspend fun onInboundFrame(frame: JSONObject): JSONObject? = tcpServer.processFrame(frame)
+                override suspend fun onInboundFrame(frame: JSONObject): JSONObject? = inbox.processFrame(frame)
                 override suspend fun onInboundMedia(meta: JSONObject, sealed: ByteArray): JSONObject? =
                     mediaHandler?.invoke(meta, sealed)
             }

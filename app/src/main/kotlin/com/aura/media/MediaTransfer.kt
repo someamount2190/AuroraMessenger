@@ -12,7 +12,7 @@ import com.aura.identity.IdentityStore
 import com.aura.transport.MessageSender
 import com.aura.transport.TcpMessageServer
 import com.aura.transport.WireFrames
-import com.aura.transport.rtc.RtcTransport
+import com.aura.transport.rtc.PeerTransport
 import com.aura.ux.MessagePulse
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.aura.di.IoDispatcher
@@ -48,7 +48,7 @@ class MediaTransfer @Inject constructor(
     private val mediaStore: EncryptedMediaStore,
     private val messageSender: MessageSender,
     private val tcpServer: TcpMessageServer,
-    private val rtcTransport: RtcTransport,
+    private val rtcTransport: PeerTransport,
     private val messagePulse: MessagePulse,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
