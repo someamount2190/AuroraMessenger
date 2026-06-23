@@ -43,6 +43,7 @@ class SecureWipe @Inject constructor(
             database.meshPeerDao().deleteAll()
             database.ratchetDao().deleteAllSkipped()
             database.ratchetDao().deleteAllState()
+            database.ratchetDao().kemDeleteAll()
             database.prekeyDao().deleteAll()
         }
         // 2. Encrypted media files.

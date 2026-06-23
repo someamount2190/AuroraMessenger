@@ -71,6 +71,10 @@ interface RatchetDao {
     @Query("DELETE FROM kem_ratchet")
     suspend fun kemDeleteAll()
 
+    /** All KEM ratchet sessions — for encrypted backup export (one-device migration). */
+    @Query("SELECT * FROM kem_ratchet")
+    suspend fun allKemForBackup(): List<KemRatchetEntity>
+
     @Query("SELECT * FROM ratchet_state WHERE contactNodeIdHex = :nodeIdHex")
     suspend fun state(nodeIdHex: String): RatchetStateEntity?
 

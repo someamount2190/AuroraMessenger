@@ -11,6 +11,7 @@ import com.aura.crypto.NodePublicIdentity
 import com.aura.crypto.SymmetricCipher
 import com.aura.db.ContactDao
 import com.aura.db.ContactEntity
+import com.aura.db.KemRatchetEntity
 import com.aura.db.MessageDao
 import com.aura.db.MessageEntity
 import com.aura.db.RatchetDao
@@ -57,6 +58,13 @@ class Backups @Inject constructor(
             .put("identity", identityToJson(identity))
             .put("contacts", JSONArray().apply { contactDao.activeForBackup().forEach { put(contactToJson(it)) } })
             .put("ratchets", JSONArray().apply { ratchetDao.allStatesForBackup().forEach { put(ratchetToJson(it)) } })
+            // KEM Double Ratchet sessions — restored so a device MOVE continues conversations
+            // without re-pairing (Aurora is one-device-per-identity, so restore is a migration).
+            .put("kemRatchets", JSONArray().apply {
+                ratchetDao.allKemForBackup().forEach {
+                    put(JSONObject().put("c", it.contactNodeIdHex).put("s", it.sessionB64))
+                }
+            })
             .put("messages", JSONArray().apply { messageDao.allForBackup().forEach { put(messageToJson(it)) } })
         val plaintext = inner.toString().toByteArray(Charsets.UTF_8)
         val salt = ByteArray(SALT_BYTES).also { SecureRandom().nextBytes(it) }
@@ -97,6 +105,13 @@ class Backups @Inject constructor(
                 identityManager.restore(jsonToIdentity(inner.getJSONObject("identity")))
                 inner.getJSONArray("contacts").let { a -> for (i in 0 until a.length()) contactDao.upsert(jsonToContact(a.getJSONObject(i))) }
                 inner.getJSONArray("ratchets").let { a -> for (i in 0 until a.length()) ratchetDao.upsertState(jsonToRatchet(a.getJSONObject(i))) }
+                // Optional (absent in v1 backups): restore the KEM ratchet sessions.
+                inner.optJSONArray("kemRatchets")?.let { a ->
+                    for (i in 0 until a.length()) {
+                        val o = a.getJSONObject(i)
+                        ratchetDao.kemUpsert(KemRatchetEntity(o.getString("c"), o.getString("s")))
+                    }
+                }
                 inner.getJSONArray("messages").let { a -> for (i in 0 until a.length()) messageDao.insert(jsonToMessage(a.getJSONObject(i))) }
                 plaintext.fill(0)
                 Unit
@@ -203,7 +218,7 @@ class Backups @Inject constructor(
     private companion object {
         const val MAGIC = "AURABK"
         const val CONTAINER_VERSION = 1
-        const val DATA_VERSION = 1
+        const val DATA_VERSION = 2   // v2 adds the KEM ratchet sessions (kemRatchets)
         const val SALT_BYTES = 16
         val BACKUP_AAD = "aura-backup-v1".toByteArray()
         // Argon2id: ~64 MB, 3 passes — strong against offline guessing, fine for one-shot on a phone.

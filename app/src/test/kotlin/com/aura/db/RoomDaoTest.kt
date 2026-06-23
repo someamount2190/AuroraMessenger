@@ -148,6 +148,20 @@ class RoomDaoTest {
         assertNull(prekeys.byId("o1"))
     }
 
+    // ── KEM ratchet session (Phase 5) + backup round-trip ───────────────────────
+    @Test fun kemRatchet_upsert_load_backup_delete() = runBlocking {
+        ratchets.kemUpsert(KemRatchetEntity("c1", "session-blob-1"))
+        ratchets.kemUpsert(KemRatchetEntity("c2", "session-blob-2"))
+        assertEquals("session-blob-1", ratchets.kemSession("c1"))
+        assertEquals(2, ratchets.allKemForBackup().size)   // what Backups exports
+        ratchets.kemUpsert(KemRatchetEntity("c1", "session-blob-1b"))   // overwrite
+        assertEquals("session-blob-1b", ratchets.kemSession("c1"))
+        ratchets.kemDelete("c1")
+        assertNull(ratchets.kemSession("c1"))
+        ratchets.kemDeleteAll()
+        assertNull(ratchets.kemSession("c2"))
+    }
+
     // ── MeshPeerDao ────────────────────────────────────────────────────────────
     @Test fun meshPeer_upsertAndCount() = runBlocking {
         mesh.upsertAll(listOf(MeshPeerEntity("1.1.1.1:80", "1.1.1.1", 80, 1, 2)))

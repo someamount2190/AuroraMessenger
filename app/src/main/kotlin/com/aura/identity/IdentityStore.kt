@@ -69,6 +69,13 @@ class IdentityStore @Inject constructor(
     override val nodeIdHexOrNull: String?
         get() = cached?.nodeId?.toHex()
 
+    /**
+     * True if the stored identity is in the **pre-FIPS** format (Kyber/Dilithium under the old
+     * pref keys) — i.e. this is an upgrade across the crypto re-engineering. The new build never
+     * writes `kyber_pub`, so its presence unambiguously marks a legacy identity to reset.
+     */
+    fun hasLegacyIdentity(): Boolean = prefs.contains(LEGACY_KEY_KYBER_PUB)
+
     /** Wipe the identity (Settings → Clear all data). The next launch regenerates. */
     suspend fun clear() = mutex.withLock {
         withContext(ioDispatcher) { prefs.edit().clear().commit() }
@@ -126,6 +133,8 @@ class IdentityStore @Inject constructor(
 
     private companion object {
         const val KEY_NODE_ID        = "node_id"
+        /** Pre-FIPS key (Kyber public half) — only used to detect a legacy identity to reset. */
+        const val LEGACY_KEY_KYBER_PUB = "kyber_pub"
         const val KEY_KEM_PUB        = "kem_pub"
         const val KEY_KEM_PRIV       = "kem_priv"
         const val KEY_DILITHIUM_PUB  = "dilithium_pub"

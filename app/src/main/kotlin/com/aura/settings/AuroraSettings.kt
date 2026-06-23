@@ -91,6 +91,12 @@ class AuroraSettings @Inject constructor(
      */
     val duressWipe: StateFlow<Boolean> = _duressWipe
 
+    /** Crypto-format era of the stored identity/data. 0 = unset (pre-FIPS or first launch);
+     *  the FIPS (X-Wing/ML-DSA) build sets it on first run. Drives the one-time upgrade reset. */
+    var cryptoEra: Int
+        get() = prefs.getInt(KEY_CRYPTO_ERA, 0)
+        set(value) { prefs.edit().putInt(KEY_CRYPTO_ERA, value).apply() }
+
     private val _onboardingDone = MutableStateFlow(prefs.getBoolean(KEY_ONBOARDING_DONE, false))
     /** Observable so the wake service can start the moment setup completes. */
     val onboardingDoneFlow: StateFlow<Boolean> = _onboardingDone
@@ -194,6 +200,7 @@ class AuroraSettings @Inject constructor(
         private const val KEY_ADVERTISED      = "advertised_address"
         private const val KEY_SERVER_ADDRESS  = "server_address"
         private const val KEY_ONBOARDING_DONE = "onboarding_done"
+        private const val KEY_CRYPTO_ERA      = "crypto_era"
         private const val KEY_SPLASH_SHOWN     = "splash_shown"
         private const val KEY_BATTERY_PROMPT   = "battery_prompt_shown"
         private const val KEY_OVERLAY_PROMPT   = "overlay_prompt_shown"
