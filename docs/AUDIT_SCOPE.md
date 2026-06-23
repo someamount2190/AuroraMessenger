@@ -51,18 +51,23 @@ report-eligibility version of this list.)
 - The Android Keystore / TEE provides a trustworthy hardware-backed master key.
 - The user verifies the SAS code out-of-band (in person or over a trusted channel) — this
   is what upgrades QR pairing from TOFU to MITM-resistant.
-- The underlying primitives (Kyber/ML-KEM, Dilithium/ML-DSA, X25519, Ed25519,
+- The underlying primitives (ML-KEM-768 & X25519 via **X-Wing**, ML-DSA-65, Ed25519,
   XChaCha20-Poly1305, SHA-3, Argon2id) are secure at their chosen parameter sets, and their
-  implementations (liboqs, Bouncy Castle, SQLCipher) are correct.
+  implementations (**Bouncy Castle** PQC, **Google Tink**, SQLCipher) are correct. The stack
+  is now pure-JVM — liboqs/JNI has been removed (see [`CRYPTO_MIGRATION_PLAN.md`](CRYPTO_MIGRATION_PLAN.md)).
+  Caveat: BouncyCastle's X-Wing tracks an in-progress IETF draft (-07), not a finalized standard.
 - TLS + certificate pinning protect the rendezvous transport against a rogue CA.
 
 ## Known limitations & residual risks
 - **No post-compromise security ("healing") yet.** A session rests on a single root secret
   seeded at pairing; the symmetric double-ratchet gives forward secrecy but not recovery
-  after a key compromise. A continuous DH/KEM ratchet is the next phase.
-- **Legacy handshake fallback.** If no PQXDH prekey bundle is available, pairing falls back
-  to an identity-only handshake (no forward secrecy). The app warns ("paired without forward
-  secrecy"), but a network attacker who suppresses the bundle can force the downgrade.
+  after a key compromise. A post-quantum (X-Wing) asymmetric ratchet is the planned next
+  phase (Phase 5 of [`CRYPTO_MIGRATION_PLAN.md`](CRYPTO_MIGRATION_PLAN.md)); it is bespoke
+  protocol crypto and gated on dedicated review before it is relied upon.
+- ~~**Legacy handshake fallback.**~~ **Closed.** The identity-only (no-forward-secrecy)
+  fallback has been removed: pairing now requires a verified PQXDH prekey bundle and fails
+  closed otherwise, so a network attacker can no longer suppress the bundle to strip forward
+  secrecy.
 - **Rendezvous learns reachability.** It maps `nodeId → address` (15-min TTL, in-memory,
   no logs) and observes that a device is online; disclosed in the Privacy Policy.
 - **Direct-P2P over NAT.** Messages flow peer-to-peer; two peers both behind carrier-grade
