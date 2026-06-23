@@ -17,31 +17,21 @@ We use a five-tier pyramid. Each source class is assigned to exactly one *primar
 
 | Tier | What | Runs on | Source set | Speed |
 |---|---|---|---|---|
-| **T1 Pure-JVM unit** | Logic with no Android, no JNI | plain JVM | `crypto/src/test`, `app/src/test` | ms |
-| **T2 Native-JVM unit** | Crypto needing liboqs (Kyber/Dilithium) | JVM **+ native liboqs** | `crypto/src/test` (tagged) | ms–s |
+| **T1 Pure-JVM unit** | All crypto (incl. PQC) + logic, no Android | plain JVM | `crypto/src/test`, `app/src/test` | ms–s |
 | **T3 Storage unit** | Room DAOs + Store adapters | Robolectric / device | `app/src/test` (Robolectric) or `app/src/androidTest` | s |
 | **T4 Domain/integration** | Managers with fakes; two-party in-process | JVM (fakes) / device (Hilt) | `app/src/test` + `app/src/androidTest` | s |
 | **T5 ViewModel & UI** | ViewModels (Flows) + Compose screens | JVM (VM) / device (UI) | `app/src/test` + `app/src/androidTest` | s–min |
 
-### The liboqs native-library decision (critical)
-The `crypto` module's JVM code calls **liboqs-java (JNI)** for Kyber-1024 and
-Dilithium-3. The native `.so`/`.dll`/`.dylib` is **not** in the JVM artifact (it ships in
-the app's Android `jniLibs`). Therefore:
-
-- **T1 (no native):** `Hkdf`, `SymmetricCipher` (pure-Kotlin XChaCha20), `RatchetManager`,
-  `CryptoUtils`, `B64`, `CryptoResult` — these run as ordinary JVM tests with **no native
-  dependency**. Build the suite here first; zero setup friction.
-- **T2 (native required):** `HybridKem`, `HybridSigner`, `NodeIdentityGenerator`,
-  `PrekeyManager` (consumes KEM), and anything end-to-end. These need liboqs loadable by
-  the test JVM. Two options:
-  1. **Provision desktop-native liboqs** on the test runner's `java.library.path`
-     (vendor `liboqs.{so,dll,dylib}` per-OS; gate with `@EnabledIfSystemProperty`/JUnit
-     `Assumptions` so the suite skips—not fails—when absent).
-  2. **Run the native crypto tests as `androidTest`** on an emulator where `jniLibs` are
-     present (slower but zero host setup).
-  Recommendation: **(1)** for CI determinism, **(2)** as the fallback for local dev.
-  Tag native tests (`@Tag("native")`) so `./gradlew test` (T1) stays instant and a
-  separate task runs T2.
+### No more native tier — the whole crypto stack is pure-JVM
+The crypto re-engineering removed liboqs/JNI: the post-quantum primitives are now pure-Java
+**BouncyCastle** (X-Wing = ML-KEM-768 + X25519, ML-DSA-65) and **Google Tink** (XChaCha20-
+Poly1305). So there is **no T2 "native" tier** any more — `HybridKem`, `HybridSigner`,
+`NodeIdentityGenerator`, `PrekeyManager`, `KemDoubleRatchet` and the end-to-end pairing
+simulation all run as **ordinary T1 JVM tests on CI**, alongside `Hkdf`, `SymmetricCipher`,
+etc. The `@Tag("native")`/`assumeTrue(NativeCrypto.available)` guards are gone; `./gradlew -p
+crypto test` runs the entire crypto suite (incl. PQC KATs) with zero setup. The only remaining
+`androidTest` crypto is the optional on-device demo/attack suite (validates the same code under
+the real Android runtime).
 
 ---
 
@@ -81,12 +71,13 @@ Add to `crypto/build.gradle.kts` (testImplementation) and `app/build.gradle.kts`
 ## 3. Source-set layout
 
 ```
-crypto/src/test/kotlin/com/aura/crypto/
-  HkdfTest.kt              SymmetricCipherTest.kt    RatchetManagerTest.kt
-  CryptoUtilsTest.kt       B64Test.kt                CryptoResultTest.kt
-  HybridKemTest.kt[native] HybridSignerTest.kt[native]
-  NodeIdentityTest.kt[native]  PrekeyManagerTest.kt[native]
-  testutil/ (FakeRatchetStore, FakePrekeyStore, CryptoFixtures, Vectors)
+crypto/src/test/kotlin/com/aura/crypto/   (all pure-JVM, incl. PQC)
+  HkdfTest.kt  HkdfRfc5869KatTest.kt   SymmetricCipherTest.kt  SymmetricCipherKatTest.kt
+  HybridKemTest.kt  HybridSignerTest.kt  NodeIdentityTest.kt  PrekeyManagerTest.kt
+  KemDoubleRatchetTest.kt  KemRatchetCodecTest.kt  KemRatchetManagerTest.kt
+  PqcKatTest.kt  WycheproofTest.kt  ClassicalKatTest.kt  RatchetManagerTest.kt
+  CryptoUtilsTest.kt  B64Test.kt  CryptoResultTest.kt
+  testutil/ (FakeRatchetStore, FakePrekeyStore)
 
 app/src/test/kotlin/com/aura/            (JVM + Robolectric)
   pairing/PairingManagerTest.kt          transport/MessageSenderTest.kt
@@ -148,18 +139,19 @@ app/src/androidTest/kotlin/com/aura/     (device/emulator)
 
 ---
 
-## 5. Tier 2 — crypto needing liboqs (tag `native`)
+## 5. Crypto — post-quantum (now pure-JVM T1; no liboqs)
 
-### `HybridKem` (`generateKyberKeyPair`, `generateX25519KeyPair`, `generateKeyPair`, `encapsulate`, `decapsulate`)
+### `HybridKem` (`generateKeyPair`, `encapsulate`, `decapsulate` — X-Wing)
 - KEM round-trip: `decapsulate(encapsulate(pub).ciphertext, priv)` yields the **same shared secret** as encapsulate produced.
-- **Hybrid binding:** corrupting *only* the Kyber part **or** *only* the X25519 part of the ciphertext → different/again-failing shared secret (both halves contribute; neither alone suffices).
+- **Hybrid binding:** corrupting the ML-KEM region **or** the trailing X25519 region of the X-Wing ciphertext → different/again-failing shared secret (both halves contribute; neither alone suffices).
+- KAT/regression: `PqcKatTest` (deterministic ML-KEM-768/X-Wing sizes + pinned digests) and `WycheproofTest` (mlkem_768 decap incl. implicit-rejection).
 - Wrong private key → different secret (no false agreement).
 - `HybridPublicKey.toBytes/fromBytes` and `HybridCiphertext.toBytes/fromBytes` round-trip; truncated/oversized bytes → throws, not silent.
 - Shared-secret length == 32; high entropy.
 
 ### `HybridSigner` (`sign`, `verify`, `signEd25519Only`, `verify*Sync` variants)
 - Sign→verify true for the right message+key.
-- **Both-must-verify:** a signature whose Dilithium part is valid but Ed25519 part is forged → `verify` false (and vice-versa). This is the core anti-downgrade property.
+- **Both-must-verify:** a signature whose ML-DSA-65 part is valid but Ed25519 part is forged → `verify` false (and vice-versa). This is the core anti-downgrade property.
 - Wrong key / altered message → false.
 - `signEd25519Only` ↔ `verifyEd25519Only`/`verifyEd25519OnlySync` consistent; `verifyHybridEd25519PartSync` accepts a full hybrid sig's Ed25519 portion (the pairing fallback path) and rejects a tampered one.
 - `HybridVerifyKey.toBytes/fromBytes` round-trip; cross-key rejection.

@@ -5,7 +5,7 @@ Lifecycle of every key, from generation to destruction. Primitives and sizes are
 
 ## Identity keys
 - **Generated on first launch** (`com.aura.crypto.NodeIdentity` + `com.aura.identity`): a hybrid
-  KEM keypair (Kyber-1024 + X25519) and a hybrid signing keypair (Dilithium-3 + Ed25519).
+  KEM keypair (X-Wing: ML-KEM-768 + X25519) and a hybrid signing keypair (ML-DSA-65 + Ed25519).
 - `nodeId = SHA3-256(kemPub ‖ signPub)` — the identity is a commitment to the keys.
 - **Storage:** private keys live in **EncryptedSharedPreferences**, encrypted under a master
   key held in the **Android Keystore** (hardware/TEE-backed). The post-quantum keys are too

@@ -40,7 +40,7 @@ opaque signaling. See the DFD in [`ARCHITECTURE.md`](ARCHITECTURE.md) §2.
 - The **rendezvous operator is untrusted for content** (ADV-3) but relied on for liveness.
 - The **network is hostile** (ADV-1/2) everywhere.
 - **Assumptions:** Android Keystore/TEE is sound; the user verifies the **SAS out-of-band**;
-  the underlying primitives and their libraries (liboqs, Bouncy Castle, SQLCipher) are correct
+  the underlying primitives and their libraries (Bouncy Castle, Google Tink, SQLCipher) are correct
   at their parameter sets.
 
 ## 5. STRIDE
@@ -125,7 +125,7 @@ opaque signaling. See the DFD in [`ARCHITECTURE.md`](ARCHITECTURE.md) §2.
 | Pairing root / transcript binding / SAS mismatch on tamper | `crypto/.../PairingCryptoTest.kt` |
 | Check-in / drain signed-message formats | `app/src/test/.../server/CheckinSigningTest.kt` |
 | Ratchet derivation, skipped-key bounds, AEAD round-trips | crypto unit tests (`TEST_ARCHITECTURE.md`) |
-| Native Kyber/Dilithium + attack vectors | instrumented tests (run on device; `TEST_STATUS.md`) |
+| ML-KEM-768 / ML-DSA-65 / X-Wing KATs + attack vectors | pure-JVM crypto tests on CI (RFC + Wycheproof + deterministic KATs; `TEST_ARCHITECTURE.md`) |
 | End-to-end pairing over production rendezvous | live real-phone↔emulator test (`AUDIT_SCOPE.md` §Prior validation) |
 
 Gaps in coverage and device-only paths are tracked in [`TEST_STATUS.md`](TEST_STATUS.md).

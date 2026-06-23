@@ -96,7 +96,7 @@ sequenceDiagram
 flowchart TD
   HW["Android Keystore (TEE-backed)"] -->|wraps| MK["Master key"]
   MK -->|encrypts| ESP["EncryptedSharedPreferences"]
-  ESP --> IK["Hybrid identity keys<br/>(Kyber-1024+X25519 KEM, Dilithium-3+Ed25519 sign)"]
+  ESP --> IK["Hybrid identity keys<br/>(X-Wing: ML-KEM-768+X25519 KEM, ML-DSA-65+Ed25519 sign)"]
   IK --> NID["nodeId = SHA3-256(kemPub ‖ signPub)"]
   MK -->|derives/holds| DBK["SQLCipher DB key"]
   DBK --> DB[("Messages, contacts,<br/>ratchet & prekey state")]

@@ -1,62 +1,56 @@
 # Test Implementation Status
 
 Tracks what's built against the plan in [`TEST_ARCHITECTURE.md`](TEST_ARCHITECTURE.md).
-Last updated: 2026-06-16.
+Last updated: 2026-06-23 (post crypto re-engineering — pure-JVM, no liboqs/native tier).
 
 ## Summary
 
-| | Authored | Verified green | Skipped (env-gated) |
-|---|---|---|---|
-| `crypto` module | 82 | **60** | 22 (need native liboqs) |
-| `app` module | 42 | **42** | — |
-| **Total** | **124** | **102** | 22 |
+| | Verified green | Skipped |
+|---|---|---|
+| `crypto` module | **145** | 0 |
+| `app` module | **83** | 0 |
+| **Total** | **228** | 0 |
 
-Run:
-- `./gradlew -p crypto test` → 60 pass, 22 skip (T2 skips without native).
-- `./gradlew :app:testDebugUnitTest` → 42 pass (Robolectric works in CI/JVM).
+Run (both pure-JVM/Robolectric, no native deps, CI-friendly):
+- `./gradlew -p crypto test` → 145 pass.
+- `./gradlew :app:testDebugUnitTest` → 83 pass.
 
-## Done & green ✅
+## Crypto — all pure-JVM now ✅
 
-**T1 — crypto pure-JVM** (`crypto/src/test`): `HkdfTest` (11), `SymmetricCipherTest` (10),
-`RatchetManagerTest` (20 — incl. out-of-order, single-use skipped keys, replay, forged-frame-
-doesn't-burn-chain, skip-flood >512, SAS match + MITM mismatch, skipped-cap, concurrency),
-`CryptoUtilsTest` (7), `B64Test` (4), `CryptoResultTest` (8). Fakes: `FakeRatchetStore`, `FakePrekeyStore`.
+The liboqs/JNI removal means the **entire** crypto suite (incl. the post-quantum primitives)
+runs on CI; there is no longer a device-only "native" tier or any `assumeTrue` skip guards.
 
-**T3 — storage** (`app/src/test`, Robolectric + in-memory Room): `RoomDaoTest` (14, all 5 DAOs),
-`StoreAdapterConformanceTest` (4 — same contract run against the fakes *and* the Room adapters).
+- **Primitives:** `HkdfTest` + `HkdfRfc5869KatTest` (RFC 5869 KATs), `SymmetricCipherTest` +
+  `SymmetricCipherKatTest` (Tink XChaCha vs. clean-room reference), `HybridKemTest` (X-Wing),
+  `HybridSignerTest` (ML-DSA-65 + Ed25519, incl. the 3309-byte FIPS size), `NodeIdentityTest`,
+  `PrekeyManagerTest`, utils.
+- **Known-answer / known-bug vectors:** `PqcKatTest` (deterministic ML-KEM-768 / ML-DSA-65 /
+  X-Wing sizes + regression digests), `WycheproofTest` (x25519 / ed25519 / xchacha /
+  mlkem_768 edge + known-bug corpora), `ClassicalKatTest` (Ed25519 RFC 8032, X25519 RFC 7748).
+- **KEM Double Ratchet (Phase 5):** `KemDoubleRatchetTest` (round-trips, out-of-order,
+  simultaneous steps, tamper/replay, **post-compromise healing**), `KemRatchetCodecTest`
+  (wire frame + session persistence round-trips), `KemRatchetManagerTest` (store-backed,
+  initiator-first auto-bootstrap, healing through persistence). `RatchetManagerTest` still
+  covers the symmetric SAS/media path.
 
-**T4 — security managers** (verifiable subset, Robolectric): `MediaStoreTest` (5 — at-rest
-encryption, no-plaintext-on-disk), `ContactEraserTest` (2 — cryptographic erase, prior frames
-unreadable after wipe).
+## App ✅
 
-**App pure-logic**: `WireFramesTest` (6), `StreaksTest` (8), `CheckinSigningTest` (3 — the
-canonical signing-string contract shared with the Node rendezvous server).
+- **Storage** (Robolectric + in-memory Room): `RoomDaoTest` (incl. the `kem_ratchet`
+  backup/load/delete round-trip), `StoreAdapterConformanceTest`.
+- **Integration sims** (Robolectric): `EndToEndPairMessageSimTest` (real MessageSender +
+  TcpMessageServer over the in-memory transport, driving the live KEM ratchet),
+  `PqxdhHandshakeSimTest` (the real X-Wing PQXDH handshake — both peers derive the same root),
+  plus the two-peer rendezvous/transport sims.
+- **Security/pure-logic:** `MediaStoreTest`, `ContactEraserTest`, `WireFramesTest`,
+  `StreaksTest`, `CheckinSigningTest` (the signing-string contract shared with the Node server).
 
-## Done but skip-guarded ⏭️ (run on emulator or a host with native liboqs)
+## Pending — device/UI only ⛔
 
-**T2 — crypto needing liboqs** (`crypto/src/test`, `@Before assumeTrue(NativeCrypto.available)`):
-`HybridKemTest` (7 — KEM round-trip, hybrid-binding, codec), `HybridSignerTest` (7 — both-parts-
-must-verify anti-downgrade, Ed25519 fallback), `NodeIdentityTest` (4 — nodeId binding, tamper-
-reject), `PrekeyManagerTest` (4 — signed bundle, OPK single-use). These **skip** on a plain JVM
-(no native) and **run for real** on an Android emulator (jniLibs) or a host with desktop liboqs
-on `java.library.path`.
-
-## Pending — need native liboqs AND/OR emulator to author-and-verify ⛔
-
-These are fully specified (method-level) in `TEST_ARCHITECTURE.md` but not yet written, because
-they exercise real Kyber/Dilithium (native) and/or Hilt/Compose on a device, so they can't be
-authored-and-verified in a plain JVM sandbox:
-
-- **T4 native managers**: `PairingManager` (handshake + SAS + MITM, contact lifecycle),
-  `MessageSender` / `TcpMessageServer` (seal→wire→open round-trip, offline queue),
-  `ReactionManager`, `DisappearingManager`, `SecureWipe` (Keystore-backed).
-- **T5 ViewModels** (`MainDispatcherRule` + Turbine + fake/mock managers).
-- **T5 Compose UI** (`androidTest`, `createAndroidComposeRule`).
-- **Two-party E2E capstone** (`androidTest` + Hilt): pair → verify → text → media → react →
-  disappearing → delete, both DBs converge.
-
-Recommended next step for these: run on the existing emulators (they have the native libs), where
-the T2 suite also flips from skipped to executed.
+Still best authored on an emulator (Hilt graph / Compose / real Keystore), not a JVM sandbox:
+ViewModel (Turbine) + Compose UI tests, the Keystore-backed `SecureWipe` / `Backups` round-trip,
+and an on-device end-to-end capstone (pair → verify → text → media → delete). The optional
+`androidTest` crypto demo/attack suite validates the (now pure-JVM) primitives under the real
+Android runtime.
 
 ## Infra added
 - `crypto/build.gradle.kts`: `kotlin-test-junit`, `kotlinx-coroutines-test`, `org.json` (test).

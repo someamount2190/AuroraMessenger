@@ -40,10 +40,10 @@ Aurora is being prepared for independent review. Start here:
 
 | Purpose | Algorithms | Parameters | Provided by |
 |---|---|---|---|
-| KEM (key agreement) | Kyber-1024 (ML-KEM) + X25519 | NIST L5 + Curve25519 | liboqs-java · Bouncy Castle |
-| Signatures | Dilithium-3 (ML-DSA) + Ed25519 | NIST L3 + Ed25519 | liboqs-java · Bouncy Castle |
-| AEAD | XChaCha20-Poly1305 | 256-bit key, 192-bit nonce | Bouncy Castle |
-| KDF / hash | HKDF-SHA3-256, SHA3-256 | — | Bouncy Castle |
+| KEM (key agreement) | X-Wing: ML-KEM-768 (FIPS 203) + X25519 | NIST L3 + Curve25519 | Bouncy Castle |
+| Signatures | ML-DSA-65 (FIPS 204) + Ed25519 | NIST L3 + Ed25519 | Bouncy Castle |
+| AEAD | XChaCha20-Poly1305 | 256-bit key, 192-bit nonce | Google Tink |
+| KDF / hash | HKDF-SHA-256, SHA3-256 | — | Bouncy Castle |
 | Password KDF (backups) | Argon2id | — | Bouncy Castle |
 | Database at rest | SQLCipher (AES-256) | — | SQLCipher |
 
@@ -77,8 +77,8 @@ Full reasoning and residual risks: [`docs/AUDIT_SCOPE.md`](docs/AUDIT_SCOPE.md) 
 
 ## Why it's different
 
-- **Hybrid post-quantum cryptography.** Every key exchange combines **Kyber-1024**
-  with **X25519**; every signature combines **Dilithium-3 (ML-DSA)** with **Ed25519**.
+- **Hybrid post-quantum cryptography.** Every key exchange is **X-Wing** (FIPS **ML-KEM-768**
+  + **X25519**); every signature combines FIPS **ML-DSA-65** with **Ed25519**.
   An attacker must break *both* the post-quantum and the classical primitive, so
   Aurora resists a future quantum adversary without giving up today's well-audited
   classical guarantees.
@@ -185,7 +185,7 @@ reconciliation note.
 | `crypto/` | `com.aura:aura-crypto` — standalone, Android-free post-quantum crypto core (hybrid KEM/signatures, HKDF, ratchet, prekeys) |
 | `app/src/main/kotlin/com/aura/server` | In-app rendezvous server (NanoHTTPD) |
 | `rendezvous-server/` | Standalone Node.js rendezvous server (zero runtime deps) |
-| `libs/maven/` | In-repo Maven repository: vendored `liboqs-java` + the published `aura-crypto` artifact |
+| `libs/maven/` | In-repo Maven repository: the published `aura-crypto` artifact (pure-JVM; no native deps) |
 | `app/schemas/` | Room schema exports (migration baseline, committed) |
 
 ## Build & run
@@ -197,8 +197,9 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 
 > **Standalone build.** Everything the build needs is vendored in-repo under `libs/maven`
 > (an in-repo Maven repository), so a fresh clone builds on its own — no external sibling
-> folders required. That repo holds the JitPack-only `liboqs-java` JNI wrapper and Aurora's
-> own `com.aura:aura-crypto` artifact. If you change anything under `crypto/`, re-publish it
+> folders required. That repo holds Aurora's own `com.aura:aura-crypto` artifact (the
+> post-quantum stack is now pure-JVM Bouncy Castle + Google Tink — no liboqs/JNI). If you
+> change anything under `crypto/`, re-publish it
 > into `libs/maven` before rebuilding the app:
 >
 > ```powershell
@@ -207,10 +208,11 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 
 ## Security architecture (summary)
 
-- **`com.aura.crypto`** (the standalone `crypto/` module): `HybridKem` (Kyber-1024 +
-  X25519), `HybridSigner` (Dilithium-3 + Ed25519), `SymmetricCipher` (XChaCha20-Poly1305),
-  HKDF-SHA3-256, `RatchetManager` (forward-secret double-ratchet), `PrekeyManager`
-  (PQXDH prekeys). It has no Android dependency and persists through storage interfaces
+- **`com.aura.crypto`** (the standalone `crypto/` module): `HybridKem` (X-Wing: ML-KEM-768 +
+  X25519), `HybridSigner` (ML-DSA-65 + Ed25519), `SymmetricCipher` (Tink XChaCha20-Poly1305),
+  HKDF-SHA-256, `KemDoubleRatchet`/`KemRatchetManager` (post-quantum KEM double-ratchet with
+  post-compromise healing), `PrekeyManager` (PQXDH prekeys). Pure-JVM, no Android dependency;
+  persists through storage interfaces
   the host app implements.
 - **`com.aura.identity`**: node identity generated on first launch, stored in
   EncryptedSharedPreferences (master key in the Android Keystore; post-quantum keys are
@@ -219,7 +221,7 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
   cryptographic-erase path (`SecureWipe`).
 - **QR payload**: compact JSON `{v, nodeId, kem, ed25519, pk, rdv?}` encoded directly
   (byte mode, EC level L); bulky prekeys are fetched from the rendezvous server rather
-  than carried in the QR, which would overflow its capacity past the Kyber key.
+  than carried in the QR, which would overflow its capacity past the X-Wing key.
 
 ## Design notes & background
 
@@ -251,7 +253,7 @@ its own.
 
 *Cryptography & protocol*
 
-- **Hybrid post-quantum + classical throughout** (Kyber-1024 + X25519; Dilithium-3 +
+- **Hybrid post-quantum + classical throughout** (X-Wing: ML-KEM-768 + X25519; ML-DSA-65 +
   Ed25519). An attacker must break both a quantum-era and a classical algorithm, and it
   hedges against an undiscovered flaw in either. *Cost:* larger keys/signatures, which
   forced the prekey decision below.
@@ -260,8 +262,9 @@ its own.
   the attacker holds the real key, so nothing is being broken. Only destroying an
   ephemeral one-time prekey makes recorded traffic unrecoverable.
 - **Prekeys are server-hosted bundles, not carried in the QR.** The QR is already near
-  capacity with the Kyber identity key; this is also how real X3DH works. With no bundle
-  available, pairing falls back to the legacy identity-only handshake (weaker, still works).
+  capacity with the X-Wing identity key; this is also how real X3DH works. A verified prekey
+  bundle is **required** — with none available, pairing fails closed (the old no-forward-secrecy
+  fallback was removed).
 - **Recognition-then-verify pairing with a mutual SAS**, not a read-aloud passkey. The
   SAS is what makes a QR shared over an untrusted channel safe: a MITM derives different
   roots on each side, so the codes mismatch. Codes are computed locally, never transmitted.

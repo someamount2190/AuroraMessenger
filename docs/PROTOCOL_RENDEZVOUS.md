@@ -33,7 +33,7 @@ Only two canonical strings are signed *for the server* (pairing messages are opa
 
 | Message | Canonical string | Signed by | Server verifies |
 |---|---|---|---|
-| check-in | `aura-checkin-v1\|<nodeId>\|<ip>\|<port>\|<timestamp>` | hybrid (Dilithium-3 + Ed25519) | **Ed25519 half only** (server has no Dilithium); peers verify the full hybrid at `/find` time |
+| check-in | `aura-checkin-v1\|<nodeId>\|<ip>\|<port>\|<timestamp>` | hybrid (ML-DSA-65 + Ed25519) | **Ed25519 half only** (server has no ML-DSA; reads the PQ length dynamically); peers verify the full hybrid at `/find` time |
 | drain / wait / prekeys auth | `aura-drain-v1\|<nodeId>\|<ts>` | Ed25519 | Ed25519, via headers |
 
 **Drain auth headers** (`GET /signal`, `GET /wait`, `POST /prekeys`):

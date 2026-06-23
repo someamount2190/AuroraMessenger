@@ -31,7 +31,7 @@ If anything under `crypto/` changes, republish it before rebuilding the app:
 
 ## Release configuration
 - `isMinifyEnabled = false` (pre-release): R8/shrinking deferred until keep-rules for the
-  reflective/native stack (liboqs JNI, BouncyCastle, Room, Hilt) are validated. (The APK's
+  reflective stack (BouncyCastle, Google Tink, Room, Hilt) are validated. (The APK's
   weight is native `.so`, which R8 would not shrink.)
 - `versionNameSuffix = "-pre"`.
 - Signed via `keystore.properties` at the repo root (kept private). The signing config loads

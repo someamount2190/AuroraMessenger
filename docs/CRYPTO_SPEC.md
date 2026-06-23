@@ -4,29 +4,37 @@ Implementation-accurate description of Aurora's cryptography, extracted from the
 `crypto/` module (`com.aura.crypto`) and `app/.../pairing/`. All multi-byte length
 prefixes are **4-byte big-endian**. Base64 is unpadded (`NO_WRAP`) on the wire.
 
-> Pin review to a tag (e.g. `v0.2.2-pre`); constants below are quoted from source.
+> Reflects the crypto re-engineering (FIPS PQC + pure-JVM libraries): see
+> [`CRYPTO_MIGRATION_PLAN.md`](CRYPTO_MIGRATION_PLAN.md). Pin review to a tag; constants below
+> are quoted from source.
 
 ## 1. Primitives & sizes
 
 | Role | Algorithm | Key / output sizes | Provider |
 |---|---|---|---|
-| KEM | **Kyber-1024 (ML-KEM)** + **X25519** | Kyber pub 1568 B, X25519 pub 32 B; shared secret 32 B (after combine) | liboqs-java; Bouncy Castle |
-| Signature | **Dilithium-3 (ML-DSA)** + **Ed25519** | Dilithium pub 1952 B / sig 3293 B; Ed25519 pub 32 B / sig 64 B | liboqs-java; Bouncy Castle |
-| AEAD | **XChaCha20-Poly1305** | key 32 B, nonce 24 B, tag 16 B | Bouncy Castle |
-| KDF | **HKDF (RFC 5869) over HMAC-SHA3-256** | output default 32 B; default salt = 32 zero bytes | Bouncy Castle |
-| Hash | **SHA3-256** | 32 B | Bouncy Castle |
+| KEM | **X-Wing** = **ML-KEM-768** (FIPS 203) + **X25519** | pub ≈ 1216 B, ct ≈ 1120 B, shared secret 32 B | Bouncy Castle (`pqc.crypto.xwing`) |
+| Signature | **ML-DSA-65** (FIPS 204) + **Ed25519** | ML-DSA pub 1952 B / sig 3309 B; Ed25519 pub 32 B / sig 64 B | Bouncy Castle |
+| AEAD | **XChaCha20-Poly1305** | key 32 B, nonce 24 B, tag 16 B | **Google Tink** |
+| KDF | **HKDF (RFC 5869) over HMAC-SHA-256** | output default 32 B; default salt = 32 zero bytes | Bouncy Castle |
+| Hash | **SHA3-256** (FIPS 202) | 32 B | Bouncy Castle |
 | Backup KDF | **Argon2id** | → 32 B key | Bouncy Castle |
 
-### Wire formats
-- **Hybrid KEM public key:** `[4B len][Kyber pub 1568][X25519 pub 32]`
-- **Hybrid KEM ciphertext:** `[4B len][Kyber ct][X25519 ephemeral pub 32]`
-- **Hybrid verify key:** `[4B len][Dilithium pub 1952][Ed25519 pub 32]`
-- **Hybrid signature:** `[4B len=3293][Dilithium-3 sig 3293][Ed25519 sig 64]` (= 3361 B). **Both** halves must verify.
-- **AEAD frame:** `[24B nonce][ciphertext ‖ 16B Poly1305 tag]`; optional AAD is bound into the MAC and not transmitted.
+The post-quantum stack is **pure-JVM** (no liboqs/JNI); the whole suite — including PQC
+known-answer tests — runs on the CI tier (see [`CRYPTO_TEST_VECTORS.md`](CRYPTO_TEST_VECTORS.md)).
 
-The hybrid KEM combines `kyberSharedSecret ‖ x25519SharedSecret` through HKDF bound to the
-info label `aura_kem_v1`, yielding a 32-byte secret. An attacker must break **both** Kyber
-and X25519 to recover it.
+> ⚠ X-Wing tracks an in-progress IETF draft (`draft-connolly-cfrg-xwing-kem`, currently -07),
+> not a finalised standard — pin the Bouncy Castle version and re-verify on any bump.
+
+### Wire formats
+- **KEM public key:** `[4B len][X-Wing pub ≈1216]` (a single opaque X-Wing blob).
+- **KEM ciphertext:** `[4B len][X-Wing ct ≈1120]`.
+- **Hybrid verify key:** `[4B len][ML-DSA-65 pub 1952][Ed25519 pub 32]`.
+- **Hybrid signature:** `[4B len=3309][ML-DSA-65 sig 3309][Ed25519 sig 64]` (= 3377 B). **Both** halves must verify.
+- **AEAD frame:** `[24B nonce][ciphertext ‖ 16B Poly1305 tag]`; optional AAD is bound into the MAC and not transmitted. (Libsodium/IETF XChaCha layout, via Tink.)
+
+X-Wing performs the hybrid KEM combine **internally** (a SHA3-256-based KDF over the ML-KEM-768
+and X25519 outputs, binding both ciphertexts), so Aurora no longer composes the secret itself.
+An attacker must break **both** ML-KEM-768 and X25519 to recover it.
 
 ## 2. Domain-separation labels (verbatim)
 
@@ -35,36 +43,40 @@ caught downstream (e.g. by SAS mismatch).
 
 | Label | Use |
 |---|---|
-| `aura_kem_v1` | Hybrid KEM secret combine |
-| `aura-pair-root-v2` | Legacy (identity-only) pairing root |
-| `aura-pair-root-v3\|<init>\|<resp>\|<spkId>\|<opkId>\|<hasOpk>\|` | Forward-secret (PQXDH) root info header |
-| `aura-ratchet-v1\|chain\|low` / `...\|chain\|high` | Initial receive/send chain keys (by node order) |
-| `aura-ratchet-v1\|mk` | Per-message key from chain key |
-| `aura-ratchet-v1\|ck` | Chain-key advance |
+| `aura-pair-root-v4\|<init>\|<resp>\|<spkId>\|<opkId>\|<hasOpk>\|` | Forward-secret (PQXDH) root info header |
+| `aura-ratchet-v2\|root` | KEM-ratchet root step (HKDF salt=root, ikm=X-Wing ss → 64 B → new root ‖ chain key) |
+| `aura-ratchet-v2\|mk` / `aura-ratchet-v2\|ck` | Per-message key / chain-key advance (KEM ratchet) |
+| `aura-ratchet-v2\|bootstrap` | Seed for the deterministic responder bootstrap ratchet key |
+| `aura-ratchet-v1\|chain\|{low,high}`, `\|mk`, `\|ck` | SAS/media seeding only (legacy symmetric `RatchetManager`; not the message ratchet) |
 | `aura-sas-v1` | 8-byte SAS fingerprint from root |
 | `aura-sas-id-v1\|<targetNodeIdHex>` | Per-identity SAS code binding |
 | `aura-prekey-v1\|<nodeIdHex>\|<kind>\|<id>\|<pubB64>` | Signed message for a published prekey |
 
+(The pre-FIPS labels `aura_kem_v1`, `aura-pair-root-v2/v3`, `aura-pairreq-v1` are **removed** —
+clean break.)
+
 ## 3. Identity
 
-On first launch the device generates a hybrid KEM keypair and a hybrid signing keypair.
-Identity is bound to the keys:
+On first launch the device generates an X-Wing KEM keypair and an ML-DSA-65 + Ed25519 signing
+keypair. Identity is bound to the keys:
 
 ```
 nodeId = SHA3-256( kemPublicKey.toBytes() ‖ signingPublicKey.toBytes() )
 ```
 
 So a node cannot be impersonated by substituting keys, and the rendezvous can enforce the
-binding (see [`PROTOCOL_RENDEZVOUS.md`](PROTOCOL_RENDEZVOUS.md) → STRICT_BINDING).
+binding (see [`PROTOCOL_RENDEZVOUS.md`](PROTOCOL_RENDEZVOUS.md) → STRICT_BINDING). The key
+*formats* changed with the FIPS migration, so nodeIds differ from pre-FIPS builds — a one-time
+upgrade reset (`StartupMigrations`) clears the dead legacy identity so the user re-pairs.
 
 ## 4. QR pairing payload
 
 Compact JSON, QR byte mode, EC level L:
 ```
-{ "v":1, "nodeId":<hex>, "kem":<b64 hybrid KEM pub>, "ed25519":<b64 32B>, "pk":1, "rdv?":[urls] }
+{ "v":1, "nodeId":<hex>, "kem":<b64 X-Wing pub>, "ed25519":<b64 32B>, "pk":1, "rdv?":[urls] }
 ```
-Bulky prekeys are **not** in the QR (they would overflow past the Kyber key); the scanner
-fetches the signed bundle from the rendezvous. `pk >= 1` advertises PQXDH support.
+Bulky prekeys are **not** in the QR; the scanner fetches the signed bundle from the rendezvous.
+`pk >= 1` advertises PQXDH support.
 
 ## 5. PQXDH pairing handshake
 
@@ -87,15 +99,15 @@ sequenceDiagram
   Note over S,H: both move to VERIFY; do mutual SAS (§7)
 ```
 
-### Root derivation (`PairingCrypto`)
-- **Legacy (no prekey bundle):** `root = HKDF(ikm = s_KEM, info = "aura-pair-root-v2", len = 32)`.
-  Used only as a fallback; **no forward secrecy**. The app raises a `WeakPairing` warning when
-  a peer advertised prekeys but none were usable (downgrade signal).
-- **Forward-secret (PQXDH):**
-  - `ikm = sIK ‖ sSPK ‖ (sOPK or empty)`
-  - `info = "aura-pair-root-v3|<init>|<resp>|<spkId>|<opkId>|<hasOpk>|" ‖ SHA3-256(ctIK) ‖ SHA3-256(ctSpk) ‖ (SHA3-256(ctOpk) or empty)`
-  - `salt = SHA3-256(responderKyberPub)`
-  - `root = HKDF(ikm, salt, info, len = 32)`; `ikm` wiped after.
+A verified PQXDH prekey bundle is **mandatory** — the pre-FIPS identity-only (no-forward-secrecy)
+fallback has been removed, so pairing **fails closed** if no usable bundle is available
+(closing the downgrade-to-no-FS risk).
+
+### Root derivation (`PairingCrypto.fsRoot`)
+- `ikm = sIK ‖ sSPK ‖ (sOPK or empty)`
+- `info = "aura-pair-root-v4|<init>|<resp>|<spkId>|<opkId>|<hasOpk>|" ‖ SHA3-256(ctIK) ‖ SHA3-256(ctSpk) ‖ (SHA3-256(ctOpk) or empty)`
+- `salt = SHA3-256(responderKemPub)`  (the responder's identity X-Wing public key)
+- `root = HKDF-SHA-256(ikm, salt, info, len = 32)`; `ikm` wiped after.
 
 The info/salt bind the full transcript (both identities, prekey ids, all ciphertexts, the
 responder's identity key), so any tamper or key substitution yields a different root → SAS
@@ -109,34 +121,48 @@ These travel as opaque `/signal` payloads (the rendezvous never parses them):
 | Message | Signed canonical string |
 |---|---|
 | pairreq (PQXDH) | `aura-pairreq-v2\|<from>\|<to>\|<ctIK>\|<ctSpk>\|<ctOpk or ->\|<spkId>\|<opkId or ->` |
-| pairreq (legacy) | `aura-pairreq-v1\|<from>\|<to>\|<ctIK>` |
-| pairaccept | `aura-pairaccept-v1\|<from>\|<to>\|<dilithiumPubB64>` |
+| pairaccept | `aura-pairaccept-v1\|<from>\|<to>\|<dilithiumPubB64>` (the field name is historical; it carries the ML-DSA-65 public key) |
 | pairverify | `aura-pairverify-v1\|<from>\|<to>` |
 | paircancel | `aura-paircancel-v1\|<from>\|<to>` |
 | pairreject | `aura-pairreject-v1\|<from>\|<to>` |
 | contactremove | `aura-contactremove-v1\|<from>\|<to>` |
 
-## 6. Double ratchet (`RatchetManager`)
+## 6. Message ratchet — post-quantum KEM Double Ratchet (`KemDoubleRatchet` / `KemRatchetManager`)
 
-Seeded from the 32-byte pairing root, which is then destroyed:
-- `low = HKDF(root, "aura-ratchet-v1|chain|low", 32)`, `high = HKDF(root, "...|chain|high", 32)`
-- Roles by lexicographic node order: the lower nodeId takes `low` as **receive** chain, the
-  higher takes it as **send** (symmetric, deterministic on both sides).
-- `sasFingerprint = HKDF(root, "aura-sas-v1", 8)`; a random media key is generated.
-- `root.fill(0)`.
+Messages and media are sealed with a **KEM Double Ratchet**: Signal's Double Ratchet with an
+**X-Wing** KEM step replacing the DH step, so it provides **forward secrecy *and*
+post-compromise security ("healing")** — the gap the older symmetric ratchet had. Full design
+and security argument in [`PQ_RATCHET_DESIGN.md`](PQ_RATCHET_DESIGN.md); summary:
 
-Per message:
-- `messageKey = HKDF(chainKey, "aura-ratchet-v1|mk", 32)`; `nextChainKey = HKDF(chainKey, "aura-ratchet-v1|ck", 32)`.
-- Encrypt with XChaCha20-Poly1305 under `messageKey`; advance the chain (old chain key discarded).
+- **Seeding.** Both peers derive a shared bootstrap ratchet keypair deterministically from the
+  pairing root (`aura-ratchet-v2|bootstrap`). The **initiator** is set up to send first; the
+  responder to receive. On pairing completion the initiator **auto-bootstraps** (one sealed
+  no-op control frame) so either side can then send first.
+- **Root chain.** On each direction change the sender encapsulates to the peer's current ratchet
+  key (X-Wing), mixing the fresh shared secret into the root: `(root', chainKey) =
+  HKDF-SHA-256(salt=root, ikm=ss, info="aura-ratchet-v2|root", 64B)`. The KEM ciphertext rides
+  in the message header; the peer decapsulates with the matching private key. Each receiving
+  step **rotates the keypair**, so a state compromise heals once both sides have stepped with
+  fresh randomness.
+- **Symmetric chains.** Per message: `messageKey = HKDF(chainKey, "...|mk")`,
+  `nextChainKey = HKDF(chainKey, "...|ck")`; seal with XChaCha20-Poly1305 (Tink); discard the
+  old chain key (forward secrecy). The header (ratchet pubkey, optional ct, `pn`, `n`) is bound
+  into the AEAD as associated data.
+- **Out-of-order.** Skipped message keys are cached per ratchet epoch (cap **1024**); a frame
+  more than **512** ahead is refused (skip-flood guard). KEM-DR property: an epoch's first
+  (ciphertext-bearing) message must arrive before later ones in that epoch.
+- **Persistence.** The whole session (root, chains, ratchet keypair, peer key, skipped cache) is
+  stored as one blob per contact (`kem_ratchet` table); `decrypt` commits only on a successful
+  auth, so a forged frame can't corrupt live state.
 
-Out-of-order: skipped message keys are cached (cap **1024** per contact) and used once; frames
-more than **512** ahead of the receive counter are refused (skip-flood guard). This gives
-**forward secrecy** (each message key is discarded) but, by design, **no post-compromise
-healing** yet — the session still rests on the single seeded root (see non-goals).
+> The legacy symmetric `RatchetManager` (`aura-ratchet-v1`) is **no longer on the message
+> path** — it is retained only to derive/store the SAS fingerprint and the media-at-rest key
+> from the pairing root.
 
 ## 7. Short Authentication String (SAS)
 
-Each side computes a 6-digit code **bound to a target identity**, locally, never transmitted:
+Each side computes a 6-digit code **bound to a target identity**, locally, never transmitted
+(seeded from the root by `RatchetManager` at pairing):
 ```
 bound  = HKDF(ikm = sasFingerprint(8B), info = "aura-sas-id-v1|<targetNodeIdHex>", len = 4)
 bits20 = (bound[0]<<12) | (bound[1]<<4) | (bound[2] >> 4)
@@ -149,7 +175,7 @@ is attempt-limited).
 
 ## 8. Prekeys (`PrekeyManager`)
 
-- **Signed prekey (SPK):** one current hybrid keypair, rotated every **7 days** with a 7-day
+- **Signed prekey (SPK):** one current X-Wing keypair, rotated every **7 days** with a 7-day
   grace overlap. **One-time prekeys (OPK):** pool target 20, published in batches; server
   retains at most 100; **consumed (deleted) on first fetch**.
 - Each prekey is published with an **Ed25519 signature** (compact, for bandwidth) over
@@ -159,5 +185,7 @@ is attempt-limited).
 
 ## 9. At-rest & backups (summary)
 SQLCipher (AES-256) DB; identity keys in EncryptedSharedPreferences under a Keystore master
-key; media under a ratchet-derived key; opt-in backups sealed with XChaCha20-Poly1305 under an
-Argon2id-derived key. See [`DATA_AT_REST.md`](DATA_AT_REST.md) and [`KEY_MANAGEMENT.md`](KEY_MANAGEMENT.md).
+key; media under a `RatchetManager`-derived key; opt-in backups sealed with XChaCha20-Poly1305
+under an Argon2id-derived key. Backups carry the identity, contacts, messages, SAS/media keys,
+**and the KEM ratchet sessions** (so a device migration resumes conversations without
+re-pairing). See [`DATA_AT_REST.md`](DATA_AT_REST.md) and [`KEY_MANAGEMENT.md`](KEY_MANAGEMENT.md).
