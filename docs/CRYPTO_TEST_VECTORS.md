@@ -69,6 +69,14 @@ Schema: `{tcId, flags, result: valid|invalid|acceptable}` — edge-case / known-
 (twists, low-order points, the ML-KEM `strcmp` implicit-rejection bug), complementary to
 happy-path KATs.
 
+**Implemented** in `crypto/src/test/.../WycheproofTest.kt` against vendored `testvectors_v1`
+files under `src/test/resources/wycheproof/`: **x25519** (518 XDH edge cases — X-Wing's
+classical half), **ed25519** (valid + invalid verify incl. malleability — Aurora's signing
+path), **xchacha20_poly1305** (24-byte-nonce AEAD groups via `SymmetricCipher`/Tink), and
+**mlkem_768** (decapsulation incl. the implicit-rejection "Strcmp" bug, via keygen-from-seed →
+decaps == K). The independent-authority complement to the deterministic regression KATs in
+`PqcKatTest`.
+
 ## Recommended test plan (by tier)
 
 The stack is now entirely pure-JVM, so **there is no device-only PQC tier** — every KAT
