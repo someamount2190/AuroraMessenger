@@ -26,7 +26,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.SecureRandom
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Opt-in, passphrase-encrypted backup of the user's identity + established contacts +
@@ -42,7 +41,6 @@ import javax.inject.Singleton
  * the next launch boots into the restored state. Media *files* aren't included (they'd
  * bloat the file) — media messages restore as rows but their previews won't load.
  */
-@Singleton
 class Backups @Inject constructor(
     private val identityManager: IdentityStore,
     private val contactDao: ContactDao,

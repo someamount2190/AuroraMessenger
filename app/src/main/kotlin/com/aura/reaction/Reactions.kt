@@ -6,7 +6,6 @@ import com.aura.transport.MessageSender
 import com.aura.transport.TcpMessageServer
 import org.json.JSONObject
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Messenger-style emoji reactions. A reaction is a sealed control message
@@ -14,7 +13,6 @@ import javax.inject.Singleton
  * reaction travels over the same end-to-end-encrypted control channel as the
  * disappearing-timer sync, so the server never sees who reacted with what.
  */
-@Singleton
 class Reactions @Inject constructor(
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,

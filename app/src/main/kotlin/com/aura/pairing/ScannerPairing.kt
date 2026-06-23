@@ -14,13 +14,11 @@ import com.aura.network.RendezvousClient
 import com.aura.settings.AuroraSettings
 import org.json.JSONObject
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Scanner side of pairing (we scanned their QR): post the request, and handle the
  * peer's accept/reject. See [PairingCoordinator] for the full flow.
  */
-@Singleton
 class ScannerPairing @Inject constructor(
     private val identityManager: IdentityStore,
     private val kem: HybridKem,

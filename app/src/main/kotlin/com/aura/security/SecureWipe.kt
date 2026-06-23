@@ -11,7 +11,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Full cryptographic erase of the device's Aurora data.
@@ -26,7 +25,6 @@ import javax.inject.Singleton
  * Call [exitProcess] immediately after [wipeEverything] so no stale in-memory key
  * or database handle survives; the next launch starts from a clean identity.
  */
-@Singleton
 class SecureWipe @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: AuroraDatabase,

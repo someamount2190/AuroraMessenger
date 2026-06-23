@@ -3,7 +3,6 @@ package com.aura.db
 import com.aura.crypto.RatchetManager
 import com.aura.media.EncryptedMediaStore
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Removes a contact and ALL of its residue in one place: the contact row, its
@@ -13,7 +12,6 @@ import javax.inject.Singleton
  * pairing. Destroying the ratchet keys is a cryptographic erase of the
  * conversation: the ciphertext that ever existed becomes unrecoverable noise.
  */
-@Singleton
 class ContactEraser @Inject constructor(
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,

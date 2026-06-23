@@ -9,7 +9,6 @@ import com.aura.network.RendezvousClient
 import com.aura.settings.AuroraSettings
 import org.json.JSONObject
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * The sealed transport for WebRTC call signaling, extracted from [CallController].
@@ -21,7 +20,6 @@ import javax.inject.Singleton
  * state machine and WebRTC. Keeping them apart isolates the security-critical sealing
  * from the WebRTC lifecycle.
  */
-@Singleton
 class CallSignalCodec @Inject constructor(
     private val identityManager: IdentityStore,
     private val contactDao: ContactDao,

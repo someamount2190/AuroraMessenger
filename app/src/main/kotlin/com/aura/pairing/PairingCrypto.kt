@@ -7,7 +7,6 @@ import com.aura.crypto.HybridVerifyKey
 import com.aura.crypto.hexToBytes
 import java.security.MessageDigest
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * The cryptographic core of pairing, extracted from [PairingCoordinator]: deriving the
@@ -17,7 +16,6 @@ import javax.inject.Singleton
  * consumption, DB state) stays in [PairingCoordinator]; this owns only the math that decides
  * what root both peers agree on and whether a nodeId really commits to its keys.
  */
-@Singleton
 class PairingCrypto @Inject constructor(private val hkdf: Hkdf) {
 
     /** Legacy (identity-only) ratchet root from the single KEM shared secret. */

@@ -15,13 +15,11 @@ import com.aura.notify.Notifier
 import com.aura.settings.AuroraSettings
 import org.json.JSONObject
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Receiver side of pairing (they scanned our QR): verify and store an incoming request,
  * accept/reject it, and handle contact teardown (either side). See [PairingCoordinator].
  */
-@Singleton
 class ReceiverPairing @Inject constructor(
     private val identityManager: IdentityStore,
     private val kem: HybridKem,

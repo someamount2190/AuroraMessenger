@@ -7,7 +7,6 @@ import com.aura.network.RendezvousClient
 import com.aura.settings.AuroraSettings
 import org.json.JSONObject
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * The signed-signal transport for pairing, extracted from [PairingCoordinator].
@@ -18,7 +17,6 @@ import javax.inject.Singleton
  * This class owns signing, posting, and verification; [PairingCoordinator] owns the
  * handshake state machine and decides *what* to sign/verify.
  */
-@Singleton
 class PairingSignal @Inject constructor(
     private val signer: HybridSigner,
     private val rendezvousClient: RendezvousClient,

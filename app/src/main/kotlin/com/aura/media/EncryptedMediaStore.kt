@@ -9,7 +9,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * App-private encrypted media storage (Phase 5).
@@ -19,7 +18,6 @@ import javax.inject.Singleton
  * derived from the shared secret. Files never land in the public gallery unless
  * the user explicitly exports one ("Save to gallery").
  */
-@Singleton
 class EncryptedMediaStore @Inject constructor(
     @ApplicationContext private val context: Context,
     private val cipher: SymmetricCipher,

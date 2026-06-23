@@ -9,13 +9,11 @@ import com.aura.identity.IdentityStore
 import com.aura.settings.AuroraSettings
 import org.json.JSONObject
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Mutual verification (both sides): show our own SAS code, accept the peer's, and flip
  * to ACTIVE once both have entered the other's. See [PairingCoordinator].
  */
-@Singleton
 class VerifyPairing @Inject constructor(
     private val identityManager: IdentityStore,
     private val ratchet: RatchetManager,

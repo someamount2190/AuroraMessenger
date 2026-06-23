@@ -3,7 +3,6 @@ package com.aura.pairing
 import kotlinx.coroutines.flow.SharedFlow
 import org.json.JSONObject
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Recognition-then-verify pairing.
@@ -32,7 +31,6 @@ import javax.inject.Singleton
  * [PairingEvents] bus it re-exposes. The public surface and behaviour are unchanged;
  * callers (SyncEngine, the QR/home/conversation screens) talk only to this facade.
  */
-@Singleton
 class PairingCoordinator @Inject constructor(
     private val bus: PairingEvents,
     private val scanner: ScannerPairing,

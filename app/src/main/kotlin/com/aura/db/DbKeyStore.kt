@@ -8,13 +8,11 @@ import androidx.security.crypto.MasterKey
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.SecureRandom
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Owns the 32-byte SQLCipher database key. Generated once, stored in
  * EncryptedSharedPreferences whose master key lives in the Android Keystore.
  */
-@Singleton
 class DbKeyStore @Inject constructor(
     @ApplicationContext private val context: Context
 ) {

@@ -9,7 +9,6 @@ import com.aura.network.RendezvousClient
 import com.aura.settings.AuroraSettings
 import org.json.JSONObject
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Sealed transport for WebRTC **data-channel** signaling — the message-transport
@@ -23,7 +22,6 @@ import javax.inject.Singleton
  * AAD label `aura-rtc-v1` keeps these signals cryptographically distinct from call
  * signaling and message frames even though they share the per-contact ratchet.
  */
-@Singleton
 class RtcSignalCodec @Inject constructor(
     private val identityManager: IdentityStore,
     private val contactDao: ContactDao,
