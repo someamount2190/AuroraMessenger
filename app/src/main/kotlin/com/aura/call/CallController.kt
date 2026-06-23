@@ -42,17 +42,7 @@ class CallController @Inject constructor(
     private val notifier: Notifier,
     private val ringer: Ringer
 ) {
-    enum class CallState { IDLE, OUTGOING, INCOMING, CONNECTING, CONNECTED, ENDED }
-
-    data class CallInfo(
-        val state: CallState,
-        val peerNodeIdHex: String? = null,
-        val peerName: String? = null,
-        val isCaller: Boolean = false,
-        val isVideo: Boolean = true,
-        /** Wall-clock millis the media connected (0 until CONNECTED). Drives call timers. */
-        val connectedAtMs: Long = 0L
-    )
+    // The call state machine's model types ([CallState], [CallInfo]) live in CallModels.kt.
 
     // The WebRTC media engine. Its observer callbacks are marshalled back here through
     // [WebRtcSession.Listener], always on the app scope (never WebRTC's signaling thread).

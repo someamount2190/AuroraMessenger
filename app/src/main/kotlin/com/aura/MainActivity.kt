@@ -16,7 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.aura.call.CallController
-import com.aura.call.CallController.CallState
+import com.aura.call.CallState
 import com.aura.call.CallOverlay
 import com.aura.notify.Notifier
 import com.aura.security.AppLock

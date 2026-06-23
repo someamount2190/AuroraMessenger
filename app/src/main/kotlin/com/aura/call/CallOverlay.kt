@@ -61,7 +61,7 @@ class CallOverlay @Inject constructor(
     fun show() = main.post {
         if (root != null || !canShow()) return@post
         val info = callManager.call.value
-        if (info.state == CallController.CallState.IDLE || info.state == CallController.CallState.ENDED) return@post
+        if (info.state == CallState.IDLE || info.state == CallState.ENDED) return@post
 
         val view = buildView(info.isVideo, info.peerName)
         val params = WindowManager.LayoutParams(
@@ -87,7 +87,7 @@ class CallOverlay @Inject constructor(
         // Tear down if the call ends while we're floating.
         s.launch {
             callManager.call.collect {
-                if (it.state == CallController.CallState.ENDED || it.state == CallController.CallState.IDLE) hide()
+                if (it.state == CallState.ENDED || it.state == CallState.IDLE) hide()
             }
         }
     }

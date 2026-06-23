@@ -51,6 +51,7 @@ import kotlin.math.roundToInt
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import com.aura.call.CallController
+import com.aura.call.CallState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
@@ -98,7 +99,7 @@ fun CallScreen(
     // call's permissions as the screen appears, so the camera/mic are ready by accept.
     // Outgoing calls already obtained them before startCall, so don't re-ask.
     LaunchedEffect(Unit) {
-        if (call.state != CallController.CallState.OUTGOING) {
+        if (call.state != CallState.OUTGOING) {
             val missing = callPerms(call.isVideo).filterNot { granted(it) }
             if (missing.isNotEmpty()) callPermission.launch(missing.toTypedArray())
         }
@@ -110,7 +111,7 @@ fun CallScreen(
     }
 
     LaunchedEffect(call.state) {
-        if (call.state == CallController.CallState.ENDED || call.state == CallController.CallState.IDLE) {
+        if (call.state == CallState.ENDED || call.state == CallState.IDLE) {
             onCallEnded()
         }
     }
@@ -171,10 +172,10 @@ fun CallScreen(
             )
             Text(
                 when (call.state) {
-                    CallController.CallState.OUTGOING   -> "Calling…"
-                    CallController.CallState.INCOMING   -> "Incoming call"
-                    CallController.CallState.CONNECTING -> "Connecting…"
-                    CallController.CallState.CONNECTED  -> "Connected"
+                    CallState.OUTGOING   -> "Calling…"
+                    CallState.INCOMING   -> "Incoming call"
+                    CallState.CONNECTING -> "Connecting…"
+                    CallState.CONNECTED  -> "Connected"
                     else -> ""
                 },
                 color = Color.White.copy(alpha = 0.8f),
@@ -183,7 +184,7 @@ fun CallScreen(
         }
 
         // Controls
-        if (call.state == CallController.CallState.INCOMING) {
+        if (call.state == CallState.INCOMING) {
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)

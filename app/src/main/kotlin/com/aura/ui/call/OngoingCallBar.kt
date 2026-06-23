@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aura.call.CallController
+import com.aura.call.CallState
 import kotlinx.coroutines.delay
 
 /**
@@ -51,9 +52,9 @@ fun OngoingCallBar(callManager: CallController, onExpand: () -> Unit) {
 
     val label = when {
         call.connectedAtMs > 0L -> formatDuration(nowMs - call.connectedAtMs)
-        call.state == CallController.CallState.OUTGOING   -> "Calling…"
-        call.state == CallController.CallState.CONNECTING -> "Connecting…"
-        call.state == CallController.CallState.INCOMING   -> "Incoming call"
+        call.state == CallState.OUTGOING   -> "Calling…"
+        call.state == CallState.CONNECTING -> "Connecting…"
+        call.state == CallState.INCOMING   -> "Incoming call"
         else -> "On call"
     }
 

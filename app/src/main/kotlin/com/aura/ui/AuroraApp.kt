@@ -36,7 +36,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.lifecycle.viewModelScope
 import com.aura.call.CallController
-import com.aura.call.CallController.CallState
+import com.aura.call.CallState
 import com.aura.disappearing.DisappearingMessages
 import com.aura.identity.IdentityStore
 import com.aura.media.MediaTransfer

@@ -14,7 +14,7 @@ import com.aura.db.MessageDao
 import com.aura.db.MessageEntity
 import com.aura.db.PairState
 import com.aura.call.CallController
-import com.aura.call.CallController.CallState
+import com.aura.call.CallState
 import com.aura.di.IoDispatcher
 import com.aura.disappearing.DisappearingMessages
 import com.aura.pairing.PairingCoordinator

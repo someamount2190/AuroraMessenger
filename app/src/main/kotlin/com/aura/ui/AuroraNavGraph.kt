@@ -7,7 +7,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
-import com.aura.call.CallController.CallState
+import com.aura.call.CallState
 import com.aura.ui.call.CallScreen
 import com.aura.ui.conversation.ConversationScreen
 import com.aura.ui.home.HomeScreen
