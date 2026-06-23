@@ -10,9 +10,13 @@
 > (`HybridKem` → X-Wing ML-KEM-768; prekeys/identity/backup/pairing on single-blob KEM
 > keys; **liboqs + native `.so` fully removed** → whole PQC stack now pure-JVM on CI).
 >
-> **Remaining:** Phase 4b (drop the legacy no-FS handshake fallback — a pairing policy
-> change), Phase 5 (post-quantum asymmetric ratchet — severable, review-gated; see §6), and
-> the test-vector doc refresh (§7).
+> **Also done:** Phase 4b (legacy no-FS fallback removed — pairing now fails closed without a
+> verified PQXDH bundle) and the test-vector / audit-scope doc refresh (§7).
+>
+> **Remaining:** Phase 5 — the post-quantum asymmetric ratchet (post-compromise security).
+> It is severable and review-gated; the **design spec is written** in
+> [`PQ_RATCHET_DESIGN.md`](PQ_RATCHET_DESIGN.md) (§6 here) and must be reviewed before any
+> implementation, per the plan's own gating.
 
 Companion reading: [`CRYPTO_SPEC.md`](CRYPTO_SPEC.md) (current design),
 [`CRYPTO_TEST_VECTORS.md`](CRYPTO_TEST_VECTORS.md) (validation sources — updated by this plan),
