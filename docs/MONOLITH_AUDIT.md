@@ -47,33 +47,41 @@ the pairing/call coordinators**.
 
 ## Decomposition status
 
-The behaviour-neutral, mechanically-verifiable splits have been applied; the
-stateful coordinators are designed below but deferred (see rationale).
+All nine flagged files have been decomposed.
 
-| File | Before | After | Status |
+| File | Before | After | New units |
 |---|---:|---:|---|
-| `ConversationScreen.kt` | 1133 | 565 + MessageBubble/MediaViewer/VerifyPanel | ✅ split |
-| `AuroraDatabase.kt` | 468 | 52 + Contacts/Messages/Ratchet/Prekeys/MeshPeers | ✅ split |
-| `SettingsScreen.kt` | 650 | 252 + SettingsComponents | ✅ split |
-| `HomeScreen.kt` | 477 | 124 + HomeSearch/ContactList/HomeWidgets | ✅ split |
-| `AuroraApp.kt` | 386 | 249 + AuroraNavGraph | ✅ split |
-| `CallController.kt` | 469 | — | ⏸ designed, deferred |
-| `AuroraRendezvousServer.kt` | 417 | — | ⏸ designed, deferred |
-| `RendezvousClient.kt` | 411 | — | ⏸ designed, deferred |
-| `PairingCoordinator.kt` | 528 | — | ⏸ designed, deferred |
+| `ConversationScreen.kt` | 1133 | 565 | MessageBubble, MediaViewer, VerifyPanel |
+| `SettingsScreen.kt` | 650 | 252 | SettingsComponents (6 sections + dev + dialogs) |
+| `PairingCoordinator.kt` | 528 | 69 (facade) | PairEvent, PairingEvents, Scanner/Receiver/VerifyPairing |
+| `HomeScreen.kt` | 477 | 124 | HomeSearch, ContactList, HomeWidgets |
+| `CallController.kt` | 469 | 459 | CallModels (CallState, CallInfo) |
+| `AuroraDatabase.kt` | 468 | 52 | Contacts, Messages, Ratchet, Prekeys, MeshPeers |
+| `AuroraRendezvousServer.kt` | 417 | 361 | NodeRegistry, SignalQueues, PrekeyDirectory, IpRateLimiter |
+| `RendezvousClient.kt` | 411 | 402 | `signedDrainAuth` helper (DRY) |
+| `AuroraApp.kt` | 386 | 249 | AuroraNavGraph |
 
-**Why the coordinators are deferred.** The five completed splits move
-self-contained units (composables, Room entities/DAOs) between files in the same
-package — visibility widens from file-private to `internal`, no logic moves, and
-correctness is verifiable by inspection. The four deferred files are stateful
-classes whose decomposition means extracting *collaborators that share mutable,
-concurrency- and security-sensitive state* (ratchet seeding, signature checks, ICE
-recovery timers, call state). That is precisely the work this document flags as
-"do carefully, with the test suites green before and after" — and it must be done
-against a compiler and the `PairingCrypto*` / `CallLog` / wire-frame tests, which
-the authoring environment could not run. Their target file architecture is
-specified in the findings below so the split is a mechanical follow-up once it can
-be compiled and tested.
+Two classes of work:
+
+1. **File-level moves** (the UI screens + the Room file) — self-contained units
+   moved between files in the same package; visibility widens from file-private to
+   `internal`, no logic moves.
+2. **Class decomposition** (the coordinators/server) — extracting collaborators
+   from stateful classes. Done conservatively and behaviour-neutrally:
+   - **server** state is partitioned by resource into plain collaborators owned by
+     the HTTP boundary (no Hilt, no external API change);
+   - **PairingCoordinator** becomes a facade over scanner/receiver/verify
+     collaborators sharing an events bus — its public surface and the wire protocol
+     are unchanged;
+   - **CallController** keeps its cohesive state machine (it already delegates
+     media/signaling/log/ringing); only the model types were lifted out;
+   - **RendezvousClient** keeps its cohesive HTTP surface; only the duplicated
+     drain-auth headers were unified.
+
+> Caveat: the authoring environment had no Android SDK/Gradle, so every change is
+> verified by inspection (declaration uniqueness, brace/paren balance, import and
+> visibility checks, call-site mapping) — **not** by a green build. Compile and run
+> the `PairingCrypto*` / `CallLog` / wire-frame / DAO suites before merging.
 
 ## Findings, by priority
 
@@ -249,32 +257,25 @@ handler composables.
   bounded, single-responsibility, Android-free units with dedicated tests. The
   same discipline applied to the coordinators is the target end-state.
 
-## Remaining work (deferred coordinator splits)
+## Design notes & deliberate non-splits
 
-The five UI/DB splits are done (see Decomposition status). The remaining four are
-sequenced by value-to-risk; each is independently shippable and **must** keep the
-existing test suite green — run the splits against a compiler, not by inspection.
+A few judgement calls worth recording, since "smaller" is not always "better":
 
-1. **`AuroraDatabase` / UI screens** — ✅ done.
-2. **`CallController.kt`** — extract `IceRecoveryHandler` (the four recovery
-   timers + ICE-restart policy) and a `CallLogger` (the `logCall` MessageEntity
-   construction); keep WebRTC session ownership and the `CallState`/`CallInfo`
-   nested types where they are (19 references across 8 files key off
-   `CallController.CallState`, so promoting them to top-level is a separate,
-   reference-wide rename — not part of the file split).
-3. **`RendezvousClient.kt`** — extract an HTTP/auth helper (the repeated
-   `X-Drain-*` header construction), a `PrekeyClient`, and a `SignalQueueClient`;
-   normalise the `Result`/`null`/throw error contract while you're in there.
-4. **`AuroraRendezvousServer.kt`** — extract a `Router`, a `SignatureVerifier`, a
-   `RateLimiter` (unifying `allowFind`/`allowSignalPost`), and per-resource stores
-   (registration / signal queue / prekey).
-5. **`PairingCoordinator.kt`** — last and most carefully: separate the
-   pairing-crypto layer (FS vs legacy encapsulation, root derivation, prekey
-   consumption, secret wiping) from the state machine so it maps 1:1 to the crypto
-   spec and is unit-testable, plus a thin signal-dispatch helper for the
-   near-duplicate control-signal methods. Do this with `PairingCryptoTest` /
-   `PairingCryptoAttacks` green before and after.
+- **`CallController` stays a cohesive state machine.** It already delegates its
+  cross-cutting concerns — media (`WebRtcSession`), signaling (`CallSignalCodec`),
+  log formatting (`CallLog`), ringing (`Ringer`). The remaining size is intrinsic
+  state-machine complexity over tightly-coupled mutable fields (recovery timers,
+  ICE-restart guard, connected-at clock). Carving those into a separate
+  `IceRecoveryHandler` would require threading the controller's state back through
+  callbacks — scattering one state machine across two files for a worse result. Only
+  the model types (`CallState`/`CallInfo`) were lifted out.
+- **`RendezvousClient` stays one HTTP surface.** It is stateless and cohesive; the
+  only real smell was the thrice-duplicated drain-auth headers, now unified. Splitting
+  it into `PrekeyClient`/`SignalQueueClient` behind a facade would add indirection
+  without separating any genuinely independent concern.
+- **`PairingCoordinator` *was* worth splitting** because it had three genuinely
+  independent protocol roles (the file's own `── Scanner/Receiver/Verify side ──`
+  banners) that share only an event bus — a clean facade boundary.
 
-None of this changes behaviour; this audit recommends decomposition only, and
-explicitly does **not** recommend bundling logic changes into the same commits as
-the moves.
+Future refactors should keep recommending decomposition only, and explicitly **not**
+bundle logic changes into the same commits as structural moves.
