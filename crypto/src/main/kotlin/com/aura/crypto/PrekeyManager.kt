@@ -21,7 +21,7 @@ import java.security.SecureRandom
  * **ephemeral** KEM keys whose private halves are destroyed. The session secret then
  * needs the identity key AND a signed prekey AND a one-time prekey; destroying the
  * one-time key after use means a later identity-key compromise can no longer rebuild
- * it. Each prekey is a full hybrid (Kyber-1024 + X25519) keypair, so the forward
+ * it. Each prekey is a full X-Wing (ML-KEM-768 + X25519) keypair, so the forward
  * secrecy is itself post-quantum.
  *
  * This manager owns OUR prekeys:
@@ -107,13 +107,11 @@ class PrekeyManager(
         val kp = kem.generateKeyPair().getOrThrow()
         store.insert(
             PrekeyRecord(
-                prekeyId      = randomId(),
-                kind          = kind,
-                kyberPubB64   = b64(kp.publicKey.kyberPublicKey),
-                x25519PubB64  = b64(kp.publicKey.x25519PublicKey),
-                kyberPrivB64  = b64(kp.privateKey.kyberPrivateKey),
-                x25519PrivB64 = b64(kp.privateKey.x25519PrivateKey),
-                createdAtMs   = System.currentTimeMillis()
+                prekeyId    = randomId(),
+                kind        = kind,
+                kemPubB64   = b64(kp.publicKey.encoded),
+                kemPrivB64  = b64(kp.privateKey.encoded),
+                createdAtMs = System.currentTimeMillis()
             )
         )
     }
@@ -129,16 +127,9 @@ class PrekeyManager(
         return JSONObject().put("id", e.prekeyId).put("pub", pubB64).put("sig", b64(sig))
     }
 
-    private fun hybridPub(e: PrekeyRecord) = HybridPublicKey(
-        kyberPublicKey  = B64.decode(e.kyberPubB64),
-        x25519PublicKey = B64.decode(e.x25519PubB64)
-    )
+    private fun hybridPub(e: PrekeyRecord) = HybridPublicKey(B64.decode(e.kemPubB64))
 
-    private fun privOf(e: PrekeyRecord) = HybridPrivateKey(
-        kyberPrivateKey       = B64.decode(e.kyberPrivB64),
-        kyberPublicKeyForSalt = B64.decode(e.kyberPubB64),
-        x25519PrivateKey      = B64.decode(e.x25519PrivB64)
-    )
+    private fun privOf(e: PrekeyRecord) = HybridPrivateKey(B64.decode(e.kemPrivB64))
 
     private fun randomId(): String = ByteArray(16).also(rng::nextBytes).toHex()
     private fun b64(x: ByteArray) = B64.encode(x)

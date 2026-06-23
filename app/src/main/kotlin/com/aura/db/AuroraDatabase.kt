@@ -5,6 +5,8 @@ import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 // Entities and DAOs live in per-aggregate files in this package:
@@ -19,12 +21,17 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         ContactEntity::class, MessageEntity::class, MeshPeerEntity::class,
         RatchetStateEntity::class, RatchetSkippedKeyEntity::class, PrekeyEntity::class
     ],
-    version = 7,
+    version = 8,
     // Export the schema so version 6 became the migration baseline: from here on,
     // changes ship as @AutoMigration / Migration objects that PRESERVE user data
     // instead of wiping it. (Schema JSONs land in app/schemas — commit them.)
     // v6→v7 adds the `prekeys` table (forward-secret PQXDH handshake); a purely
     // additive change, so an automatic migration carries every real user across.
+    // v7→v8 (crypto re-engineering): the prekey KEM moves to X-Wing, collapsing the
+    // kyber/x25519 column pairs to single kem* columns. Prekeys are ephemeral and
+    // regenerated on next publish, so MIGRATION_7_8 just recreates the table —
+    // contacts and messages are untouched. (Old pairings are cryptographically
+    // invalidated by the identity-format change and re-paired at the app layer.)
     exportSchema = true,
     autoMigrations = [AutoMigration(from = 6, to = 7)]
 )
@@ -46,7 +53,26 @@ abstract class AuroraDatabase : RoomDatabase() {
                 // migrate from) are allowed to wipe. From v6 onward every bump MUST ship a
                 // migration, so a real user's contacts/messages survive app updates.
                 .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5)
+                .addMigrations(MIGRATION_7_8)
                 .build()
+        }
+
+        /**
+         * v7→v8: rebuild `prekeys` with X-Wing columns (kemPubB64/kemPrivB64) replacing the
+         * old kyber/x25519 pairs. Prekeys regenerate on next publish, so dropping them is
+         * lossless for the user; contacts and messages are left intact.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `prekeys`")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `prekeys` (" +
+                        "`prekeyId` TEXT NOT NULL, `kind` TEXT NOT NULL, " +
+                        "`kemPubB64` TEXT NOT NULL, `kemPrivB64` TEXT NOT NULL, " +
+                        "`createdAtMs` INTEGER NOT NULL, `usedAtMs` INTEGER, " +
+                        "PRIMARY KEY(`prekeyId`))"
+                )
+            }
         }
     }
 }

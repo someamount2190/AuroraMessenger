@@ -1,10 +1,10 @@
 // aura-crypto: Aurora's post-quantum crypto core as a standalone, pure-JVM library.
 //
-// It has NO Android dependency: it talks to liboqs (post-quantum KEM/signatures) and
-// Bouncy Castle (X25519/Ed25519/SHA3/ChaCha20-Poly1305) only, and persists through the
-// PrekeyStore / RatchetStore interfaces it defines (the host app supplies the storage).
-// That keeps the cryptography auditable and reusable in isolation. The native liboqs
-// .so files live with the host app (Android jniLibs); this artifact is just the JVM code.
+// It has NO Android dependency and NO native code: it talks to BouncyCastle (X-Wing
+// ML-KEM-768 + X25519, ML-DSA-65, Ed25519, SHA3, HKDF) and Google Tink (XChaCha20-
+// Poly1305) only, and persists through the PrekeyStore / RatchetStore interfaces it
+// defines (the host app supplies the storage). Pure-JVM means the whole stack —
+// including the post-quantum primitives — is unit-testable on the CI tier.
 //
 // Build + publish into the repo's local Maven repository with:
 //     ./gradlew -p crypto publish
@@ -34,9 +34,8 @@ tasks.withType<Test>().configureEach {
 
 dependencies {
     // Exposed to consumers (api) so the app gets them transitively.
-    // liboqs is still here only for the not-yet-migrated HybridKem/HybridSigner
-    // (removed in the migration's Phase 4 — see docs/CRYPTO_MIGRATION_PLAN.md).
-    api("org.openquantumsafe:liboqs-java:0.3.0")
+    // Pure-JVM post-quantum crypto: BouncyCastle X-Wing (ML-KEM-768 + X25519) and
+    // ML-DSA-65 — liboqs/JNI fully removed (see docs/CRYPTO_MIGRATION_PLAN.md).
     api("org.bouncycastle:bcprov-jdk18on:1.84")
     // XChaCha20-Poly1305 AEAD: BouncyCastle ships no XChaCha engine in any released
     // version, so the symmetric cipher uses Tink. Plain `tink` jar (not the tink-android
@@ -47,9 +46,8 @@ dependencies {
     compileOnly("org.json:json:20240303")
 
     // ── Tests ────────────────────────────────────────────────────────────────
-    // T1 (pure-JVM, no native liboqs): Hkdf, SymmetricCipher, RatchetManager, utils.
-    // T2 (native liboqs required): HybridKem/HybridSigner/NodeIdentity/PrekeyManager —
-    // those tests are tagged and skipped unless the native lib is on java.library.path.
+    // All pure-JVM now (no native liboqs tier): Hkdf, SymmetricCipher, RatchetManager,
+    // HybridKem (X-Wing), HybridSigner (ML-DSA), NodeIdentity, PrekeyManager, utils.
     testImplementation(kotlin("test-junit"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     // Present at compile-time only for main; provide it on the test runtime classpath

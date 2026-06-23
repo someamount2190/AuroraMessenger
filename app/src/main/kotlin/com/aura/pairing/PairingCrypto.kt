@@ -20,7 +20,7 @@ class PairingCrypto @Inject constructor(private val hkdf: Hkdf) {
 
     /** Legacy (identity-only) ratchet root from the single KEM shared secret. */
     fun legacyRoot(s: ByteArray): ByteArray =
-        hkdf.derive(ikm = s, info = "aura-pair-root-v2".toByteArray(), outputLen = 32)
+        hkdf.derive(ikm = s, info = "aura-pair-root-v3".toByteArray(), outputLen = 32)
 
     /**
      * Forward-secret (PQXDH) root, mixing the identity-key secret with the signed-prekey
@@ -28,7 +28,7 @@ class PairingCrypto @Inject constructor(private val hkdf: Hkdf) {
      * scanner from the secrets it encapsulated, the responder from the secrets it
      * decapsulated. The transcript (node ids, prekey ids, and SHA3 of every ciphertext)
      * is bound into the HKDF info, so a swapped ciphertext yields a different root —
-     * caught by the mutual SAS. [responderKyberPub] is the responder's identity Kyber
+     * caught by the mutual SAS. [responderKemPub] is the responder's identity X-Wing
      * public key (the QR key the scanner saw / the responder's own key).
      */
     fun fsRoot(
@@ -42,14 +42,14 @@ class PairingCrypto @Inject constructor(private val hkdf: Hkdf) {
         ctIK: ByteArray,
         ctSpk: ByteArray,
         ctOpk: ByteArray?,
-        responderKyberPub: ByteArray
+        responderKemPub: ByteArray
     ): ByteArray {
         val ikm = sIK + sSPK + (sOPK ?: ByteArray(0))
-        val header = ("aura-pair-root-v3|$initiatorHex|$responderHex|$spkId|" +
+        val header = ("aura-pair-root-v4|$initiatorHex|$responderHex|$spkId|" +
             "${opkId ?: "-"}|${if (sOPK != null) "1" else "0"}|").toByteArray()
         val info = header + hkdf.sha3_256(ctIK) + hkdf.sha3_256(ctSpk) +
             (ctOpk?.let { hkdf.sha3_256(it) } ?: ByteArray(0))
-        val root = hkdf.derive(ikm = ikm, salt = hkdf.sha3_256(responderKyberPub), info = info, outputLen = 32)
+        val root = hkdf.derive(ikm = ikm, salt = hkdf.sha3_256(responderKemPub), info = info, outputLen = 32)
         ikm.fill(0)
         return root
     }

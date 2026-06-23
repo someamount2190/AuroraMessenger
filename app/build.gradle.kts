@@ -100,11 +100,10 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     // Aurora's crypto core — a standalone module published to the in-repo local
-    // Maven repo (see /crypto and libs/maven). It brings liboqs + Bouncy Castle in
-    // transitively; the native liboqs .so files live in this app module's jniLibs.
+    // Maven repo (see /crypto and libs/maven). It brings BouncyCastle + Tink in
+    // transitively. Pure-JVM now — no native liboqs .so files.
     implementation("com.aura:aura-crypto:0.1.0")
-    // Kept explicit too (belt-and-suspenders for the native JNI + classical stack).
-    implementation(libs.liboqs)
+    // Kept explicit too (belt-and-suspenders for the post-quantum + classical stack).
     implementation(libs.bcprov)
     implementation(libs.tink)   // XChaCha20-Poly1305 AEAD (also transitive via aura-crypto)
     implementation(libs.security.crypto)

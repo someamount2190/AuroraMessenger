@@ -27,13 +27,6 @@
       },
       "dependencies": [
         {
-          "group": "org.openquantumsafe",
-          "module": "liboqs-java",
-          "version": {
-            "requires": "0.3.0"
-          }
-        },
-        {
           "group": "org.bouncycastle",
           "module": "bcprov-jdk18on",
           "version": {
@@ -66,11 +59,11 @@
         {
           "name": "aura-crypto-0.1.0.jar",
           "url": "aura-crypto-0.1.0.jar",
-          "size": 142092,
-          "sha512": "0e38b9b2ff842540da9cc62677b845ed92971d1893887d124fc5a4cf4808a5e1feaba68e241fa90210c4b87dc953d40cfd7bedd85bbf51543464081c56e48f02",
-          "sha256": "0f6e8db66eb59dfd211bb8d924b3268ba845a22934e7fb9a02bee2ffd87e2cba",
-          "sha1": "db25cbb3a856389def6a945cf8b2887354076d0f",
-          "md5": "18bffb7fc47884e7ea9abef599378ddc"
+          "size": 127650,
+          "sha512": "27083e9016aafba32f6dbbbe23f3ec4658d17b53cd667284d63d420700dc7a66c12e510ee7dbcd0ee064e2c519603fef81a9ee3813cd396bbc38cc82f2b7af55",
+          "sha256": "815a0e7990970128140293d2657f08d1b2f9e3bc369f21f398c8bfd1f2d6432d",
+          "sha1": "8483005dc796b709591f937f54f2b618a05c5e15",
+          "md5": "bb7344e7240fdb9fa1dd50f4f40a57c3"
         }
       ]
     },
@@ -87,13 +80,6 @@
       },
       "dependencies": [
         {
-          "group": "org.openquantumsafe",
-          "module": "liboqs-java",
-          "version": {
-            "requires": "0.3.0"
-          }
-        },
-        {
           "group": "org.bouncycastle",
           "module": "bcprov-jdk18on",
           "version": {
@@ -126,11 +112,11 @@
         {
           "name": "aura-crypto-0.1.0.jar",
           "url": "aura-crypto-0.1.0.jar",
-          "size": 142092,
-          "sha512": "0e38b9b2ff842540da9cc62677b845ed92971d1893887d124fc5a4cf4808a5e1feaba68e241fa90210c4b87dc953d40cfd7bedd85bbf51543464081c56e48f02",
-          "sha256": "0f6e8db66eb59dfd211bb8d924b3268ba845a22934e7fb9a02bee2ffd87e2cba",
-          "sha1": "db25cbb3a856389def6a945cf8b2887354076d0f",
-          "md5": "18bffb7fc47884e7ea9abef599378ddc"
+          "size": 127650,
+          "sha512": "27083e9016aafba32f6dbbbe23f3ec4658d17b53cd667284d63d420700dc7a66c12e510ee7dbcd0ee064e2c519603fef81a9ee3813cd396bbc38cc82f2b7af55",
+          "sha256": "815a0e7990970128140293d2657f08d1b2f9e3bc369f21f398c8bfd1f2d6432d",
+          "sha1": "8483005dc796b709591f937f54f2b618a05c5e15",
+          "md5": "bb7344e7240fdb9fa1dd50f4f40a57c3"
         }
       ]
     }

@@ -122,10 +122,8 @@ class Backups @Inject constructor(
 
     private fun identityToJson(id: NodeIdentity) = JSONObject()
         .put("nodeId", b64(id.nodeId))
-        .put("kyberPub", b64(id.publicPart.kemPublicKey.kyberPublicKey))
-        .put("x25519Pub", b64(id.publicPart.kemPublicKey.x25519PublicKey))
-        .put("kyberPriv", b64(id.privatePart.kemPrivateKey.kyberPrivateKey))
-        .put("x25519Priv", b64(id.privatePart.kemPrivateKey.x25519PrivateKey))
+        .put("kemPub", b64(id.publicPart.kemPublicKey.encoded))
+        .put("kemPriv", b64(id.privatePart.kemPrivateKey.encoded))
         .put("dilithiumPub", b64(id.publicPart.signingPublicKey.dilithiumPublicKey))
         .put("ed25519Pub", b64(id.publicPart.signingPublicKey.ed25519PublicKey))
         .put("dilithiumPriv", b64(id.privatePart.signingPrivateKey.dilithiumPrivateKey))
@@ -133,9 +131,9 @@ class Backups @Inject constructor(
 
     private fun jsonToIdentity(j: JSONObject): NodeIdentity {
         val nodeId = b64d(j.getString("nodeId"))
-        val kemPub = HybridPublicKey(b64d(j.getString("kyberPub")), b64d(j.getString("x25519Pub")))
+        val kemPub = HybridPublicKey(b64d(j.getString("kemPub")))
         val sigPub = HybridVerifyKey(b64d(j.getString("dilithiumPub")), b64d(j.getString("ed25519Pub")))
-        val kemPriv = HybridPrivateKey(b64d(j.getString("kyberPriv")), kemPub.kyberPublicKey, b64d(j.getString("x25519Priv")))
+        val kemPriv = HybridPrivateKey(b64d(j.getString("kemPriv")))
         val sigPriv = HybridSigningKey(b64d(j.getString("dilithiumPriv")), b64d(j.getString("ed25519Priv")))
         return NodeIdentity(nodeId, NodePublicIdentity(nodeId, kemPub, sigPub), NodePrivateIdentity(nodeId, kemPriv, sigPriv))
     }

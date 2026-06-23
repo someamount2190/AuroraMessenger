@@ -66,7 +66,7 @@ class PairingCryptoAttacks {
     /** Key-compromise impersonation / UKS at the identity layer: a nodeId only validates for
      *  the exact keys it commits to; substituting the signing key is rejected. */
     @Test fun identitySubstitution_isRejected() {
-        val kem = HybridPublicKey(ByteArray(1568) { (it * 3).toByte() }, ByteArray(32) { it.toByte() })
+        val kem = HybridPublicKey(ByteArray(1216) { (it * 3).toByte() })
         val dil = ByteArray(1952) { (it * 5).toByte() }
         val ed = ByteArray(32) { (it + 7).toByte() }
         val nodeId = hkdf.sha3_256(kem.toBytes() + HybridVerifyKey(dil, ed).toBytes()).toHex()
@@ -76,7 +76,7 @@ class PairingCryptoAttacks {
         assertFalse(pc.nodeIdMatches(nodeId, b64(kem.toBytes()), b64(ByteArray(32) { 0x11 }), b64(dil)))
         assertFalse(pc.nodeIdMatches(nodeId, b64(kem.toBytes()), b64(ed), b64(ByteArray(1952) { 0x22 })))
         // attacker swaps the kem key (would let them decrypt) → rejected
-        val otherKem = HybridPublicKey(ByteArray(1568) { 0x33 }, ByteArray(32) { 0x44 })
+        val otherKem = HybridPublicKey(ByteArray(1216) { 0x33 })
         assertFalse(pc.nodeIdMatches(nodeId, b64(otherKem.toBytes()), b64(ed), b64(dil)))
     }
 }

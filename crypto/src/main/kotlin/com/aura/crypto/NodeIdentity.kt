@@ -4,8 +4,8 @@ package com.aura.crypto
  * An Aurora node's complete cryptographic identity.
  *
  * Combines:
- *   - HybridKem keypair    (Kyber-1024 + X25519)   — for key agreement
- *   - HybridSigner keypair (Dilithium-3 + Ed25519) — for signatures
+ *   - HybridKem keypair    (X-Wing: ML-KEM-768 + X25519) — for key agreement
+ *   - HybridSigner keypair (ML-DSA-65 + Ed25519)          — for signatures
  *
  * nodeId = SHA3-256(kemPublicKey.toBytes() || signingPublicKey.toBytes())
  * This is the stable network address. It is derived from the public keys
@@ -75,15 +75,15 @@ data class NodePublicIdentity(
             val nodeId   = bytes.copyOfRange(0, 32)
             var offset   = 32
 
-            // HybridPublicKey: 4-byte length prefix + kyber key + 32 x25519
+            // HybridPublicKey: 4-byte length prefix + X-Wing key blob (single blob)
             require(bytes.size >= offset + 4) { "NodePublicIdentity: truncated before KEM key" }
             val kemLen = readInt4(bytes, offset)
             // Overflow-safe bounds check: compute the max allowed length first so a
             // near-Int.MAX_VALUE kemLen can't overflow the addition into a negative.
-            require(kemLen >= 0 && kemLen <= bytes.size - offset - 4 - 32) {
+            require(kemLen >= 0 && kemLen <= bytes.size - offset - 4) {
                 "NodePublicIdentity: KEM key length out of range ($kemLen)"
             }
-            val kemEnd = offset + 4 + kemLen + 32
+            val kemEnd = offset + 4 + kemLen
             val kemPub = HybridPublicKey.fromBytes(bytes.copyOfRange(offset, kemEnd))
             offset = kemEnd
 

@@ -1,21 +1,16 @@
 package com.aura.crypto
 
-import com.aura.crypto.testutil.NativeCrypto
 import kotlinx.coroutines.test.runTest
-import org.junit.Assume.assumeTrue
-import org.junit.Before
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
-/** T2 (native liboqs). Skips when the native lib is unavailable. */
+/** Pure-JVM now: X-Wing + ML-DSA identity, no liboqs. */
 class NodeIdentityTest {
 
     private val hkdf = Hkdf()
-    private val gen = NodeIdentityGenerator(HybridKem(hkdf), HybridSigner(), hkdf)
-
-    @Before fun requireNative() = assumeTrue("liboqs native unavailable", NativeCrypto.available)
+    private val gen = NodeIdentityGenerator(HybridKem(), HybridSigner(), hkdf)
 
     @Test fun nodeId_isHashOfPublicKeys() = runTest {
         val id = gen.generate().getOrThrow()

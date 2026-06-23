@@ -33,7 +33,7 @@ object AppModule {
     fun provideHkdf(): Hkdf = Hkdf.instance
 
     @Provides @Singleton
-    fun provideHybridKem(hkdf: Hkdf): HybridKem = HybridKem(hkdf)
+    fun provideHybridKem(): HybridKem = HybridKem()
 
     @Provides @Singleton
     fun provideHybridSigner(): HybridSigner = HybridSigner()

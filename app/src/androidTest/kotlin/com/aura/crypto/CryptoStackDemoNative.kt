@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
 class CryptoStackDemoNative {
 
     private val hkdf = Hkdf()
-    private val kem = HybridKem(hkdf)
+    private val kem = HybridKem()
     private val signer = HybridSigner()
     private fun show(s: String) = Log.i("CRYPTODEMO", s)
     private fun ByteArray.head(n: Int = 40) = toHex().take(n) + "…"
@@ -44,8 +44,8 @@ class CryptoStackDemoNative {
         val kp = kem.generateKeyPair().getOrThrow()
         val enc = kem.encapsulate(kp.publicKey).getOrThrow()           // sender side
         val ssRecv = kem.decapsulate(enc.ciphertext, kp.privateKey).getOrThrow()  // receiver side
-        show("── 4) Hybrid KEM (Kyber-1024 + X25519) ──")
-        show("   kyber pub  : ${kp.publicKey.kyberPublicKey.size}B   x25519 pub: ${kp.publicKey.x25519PublicKey.size}B")
+        show("── 4) Hybrid KEM — X-Wing (ML-KEM-768 + X25519) ──")
+        show("   xwing pub  : ${kp.publicKey.encoded.size}B")
         show("   ciphertext : ${enc.ciphertext.toBytes().size}B")
         show("   sender   ss: ${enc.sharedSecret.head()}")
         show("   receiver ss: ${ssRecv.head()}")

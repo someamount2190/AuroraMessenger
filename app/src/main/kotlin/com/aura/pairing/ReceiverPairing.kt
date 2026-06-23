@@ -82,7 +82,7 @@ class ReceiverPairing @Inject constructor(
                 sIK = sIK, sSPK = sSPK, sOPK = sOPK,
                 spkId = spkId, opkId = opkId,
                 ctIK = ctIKb, ctSpk = ctSpkb, ctOpk = ctOpkb,
-                responderKyberPub = identity.publicPart.kemPublicKey.kyberPublicKey
+                responderKemPub = identity.publicPart.kemPublicKey.encoded
             )
             sIK.fill(0); sSPK.fill(0); sOPK?.fill(0)
             Base64.encodeToString(root, Base64.NO_WRAP).also { root.fill(0) }

@@ -1,21 +1,16 @@
 package com.aura.crypto
 
-import com.aura.crypto.testutil.NativeCrypto
 import kotlinx.coroutines.test.runTest
-import org.junit.Assume.assumeTrue
-import org.junit.Before
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
-/** T2 (native liboqs). Skips when the native lib is unavailable. */
+/** Pure-JVM now: X-Wing (ML-KEM-768 + X25519) via BouncyCastle, no liboqs. */
 class HybridKemTest {
 
-    private val kem = HybridKem(Hkdf())
-
-    @Before fun requireNative() = assumeTrue("liboqs native unavailable", NativeCrypto.available)
+    private val kem = HybridKem()
 
     @Test fun encapsulate_thenDecapsulate_agree() = runTest {
         val kp = kem.generateKeyPair().getOrThrow()
@@ -33,21 +28,22 @@ class HybridKemTest {
         assertTrue(dec.isFailure || !dec.getOrThrow().contentEquals(enc.sharedSecret))
     }
 
-    @Test fun tamperingKyberPart_breaksAgreement() = runTest {
+    /** Corrupting the ML-KEM region of the X-Wing ciphertext must change the shared secret. */
+    @Test fun tamperingMlkemRegion_breaksAgreement() = runTest {
         val kp = kem.generateKeyPair().getOrThrow()
         val enc = kem.encapsulate(kp.publicKey).getOrThrow()
-        val badKyber = enc.ciphertext.kyberCiphertext.copyOf().also { it[0] = (it[0].toInt() xor 0x01).toByte() }
-        val ct = HybridCiphertext(badKyber, enc.ciphertext.x25519EphPublicKey)
-        val dec = kem.decapsulate(ct, kp.privateKey)
+        val bad = enc.ciphertext.encoded.copyOf().also { it[0] = (it[0].toInt() xor 0x01).toByte() }
+        val dec = kem.decapsulate(HybridCiphertext(bad), kp.privateKey)
         assertTrue(dec.isFailure || !dec.getOrThrow().contentEquals(enc.sharedSecret))
     }
 
-    @Test fun tamperingX25519Part_breaksAgreement() = runTest {
+    /** Corrupting the trailing X25519 ephemeral key region must change the shared secret. */
+    @Test fun tamperingX25519Region_breaksAgreement() = runTest {
         val kp = kem.generateKeyPair().getOrThrow()
         val enc = kem.encapsulate(kp.publicKey).getOrThrow()
-        val badEph = enc.ciphertext.x25519EphPublicKey.copyOf().also { it[0] = (it[0].toInt() xor 0x01).toByte() }
-        val ct = HybridCiphertext(enc.ciphertext.kyberCiphertext, badEph)
-        val dec = kem.decapsulate(ct, kp.privateKey)
+        val ct = enc.ciphertext.encoded
+        val bad = ct.copyOf().also { it[ct.size - 1] = (it[ct.size - 1].toInt() xor 0x01).toByte() }
+        val dec = kem.decapsulate(HybridCiphertext(bad), kp.privateKey)
         assertTrue(dec.isFailure || !dec.getOrThrow().contentEquals(enc.sharedSecret))
     }
 
@@ -63,7 +59,6 @@ class HybridKemTest {
     }
 
     @Test fun fromBytes_rejectsTruncated() {
-        // pure validation — no native needed, but lives with its type
         assertFailsWith<IllegalArgumentException> { HybridPublicKey.fromBytes(ByteArray(2)) }
         assertFailsWith<IllegalArgumentException> { HybridCiphertext.fromBytes(ByteArray(2)) }
     }

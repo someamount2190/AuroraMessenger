@@ -133,15 +133,15 @@ class RoomDaoTest {
 
     // ── PrekeyDao ──────────────────────────────────────────────────────────────
     @Test fun prekey_currentSpkIsNewest() = runBlocking {
-        prekeys.insert(PrekeyEntity("s1", "spk", "kp", "xp", "kpr", "xpr", createdAtMs = 1))
-        prekeys.insert(PrekeyEntity("s2", "spk", "kp", "xp", "kpr", "xpr", createdAtMs = 2))
+        prekeys.insert(PrekeyEntity("s1", "spk", "kp", "kpr", createdAtMs = 1))
+        prekeys.insert(PrekeyEntity("s2", "spk", "kp", "kpr", createdAtMs = 2))
         assertEquals("s2", prekeys.currentSpk()!!.prekeyId)
     }
 
     @Test fun prekey_unusedOpks() = runBlocking {
-        prekeys.insert(PrekeyEntity("o1", "opk", "kp", "xp", "kpr", "xpr", createdAtMs = 1))
-        prekeys.insert(PrekeyEntity("o2", "opk", "kp", "xp", "kpr", "xpr", createdAtMs = 2))
-        prekeys.insert(PrekeyEntity("o3", "opk", "kp", "xp", "kpr", "xpr", createdAtMs = 3, usedAtMs = 9))
+        prekeys.insert(PrekeyEntity("o1", "opk", "kp", "kpr", createdAtMs = 1))
+        prekeys.insert(PrekeyEntity("o2", "opk", "kp", "kpr", createdAtMs = 2))
+        prekeys.insert(PrekeyEntity("o3", "opk", "kp", "kpr", createdAtMs = 3, usedAtMs = 9))
         assertEquals(2, prekeys.unusedOpkCount())
         assertEquals(listOf("o1"), prekeys.unusedOpks(1).map { it.prekeyId })  // oldest first
         prekeys.delete("o1")

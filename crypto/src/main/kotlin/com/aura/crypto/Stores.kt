@@ -49,10 +49,10 @@ interface RatchetStore {
 data class PrekeyRecord(
     val prekeyId: String,
     val kind: String,
-    val kyberPubB64: String,
-    val x25519PubB64: String,
-    val kyberPrivB64: String,
-    val x25519PrivB64: String,
+    /** X-Wing public key (Base64) — what an initiator encapsulates against. */
+    val kemPubB64: String,
+    /** X-Wing private key seed (Base64) — used to decapsulate, then destroyed. */
+    val kemPrivB64: String,
     val createdAtMs: Long
 )
 

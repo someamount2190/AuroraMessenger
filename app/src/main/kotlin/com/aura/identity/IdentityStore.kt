@@ -92,10 +92,8 @@ class IdentityStore @Inject constructor(
     private fun persist(identity: NodeIdentity) {
         prefs.edit()
             .putString(KEY_NODE_ID,        b64(identity.nodeId))
-            .putString(KEY_KYBER_PUB,      b64(identity.publicPart.kemPublicKey.kyberPublicKey))
-            .putString(KEY_X25519_PUB,     b64(identity.publicPart.kemPublicKey.x25519PublicKey))
-            .putString(KEY_KYBER_PRIV,     b64(identity.privatePart.kemPrivateKey.kyberPrivateKey))
-            .putString(KEY_X25519_PRIV,    b64(identity.privatePart.kemPrivateKey.x25519PrivateKey))
+            .putString(KEY_KEM_PUB,        b64(identity.publicPart.kemPublicKey.encoded))
+            .putString(KEY_KEM_PRIV,       b64(identity.privatePart.kemPrivateKey.encoded))
             .putString(KEY_DILITHIUM_PUB,  b64(identity.publicPart.signingPublicKey.dilithiumPublicKey))
             .putString(KEY_ED25519_PUB,    b64(identity.publicPart.signingPublicKey.ed25519PublicKey))
             .putString(KEY_DILITHIUM_PRIV, b64(identity.privatePart.signingPrivateKey.dilithiumPrivateKey))
@@ -105,19 +103,12 @@ class IdentityStore @Inject constructor(
 
     private fun load(): NodeIdentity? {
         val nodeId = unb64(KEY_NODE_ID) ?: return null
-        val kemPub = HybridPublicKey(
-            kyberPublicKey  = unb64(KEY_KYBER_PUB)  ?: return null,
-            x25519PublicKey = unb64(KEY_X25519_PUB) ?: return null
-        )
+        val kemPub = HybridPublicKey(unb64(KEY_KEM_PUB) ?: return null)
         val sigPub = HybridVerifyKey(
             dilithiumPublicKey = unb64(KEY_DILITHIUM_PUB) ?: return null,
             ed25519PublicKey   = unb64(KEY_ED25519_PUB)   ?: return null
         )
-        val kemPriv = HybridPrivateKey(
-            kyberPrivateKey       = unb64(KEY_KYBER_PRIV)  ?: return null,
-            kyberPublicKeyForSalt = kemPub.kyberPublicKey,
-            x25519PrivateKey      = unb64(KEY_X25519_PRIV) ?: return null
-        )
+        val kemPriv = HybridPrivateKey(unb64(KEY_KEM_PRIV) ?: return null)
         val sigPriv = HybridSigningKey(
             dilithiumPrivateKey = unb64(KEY_DILITHIUM_PRIV) ?: return null,
             ed25519PrivateKey   = unb64(KEY_ED25519_PRIV)   ?: return null
@@ -135,10 +126,8 @@ class IdentityStore @Inject constructor(
 
     private companion object {
         const val KEY_NODE_ID        = "node_id"
-        const val KEY_KYBER_PUB      = "kyber_pub"
-        const val KEY_KYBER_PRIV     = "kyber_priv"
-        const val KEY_X25519_PUB     = "x25519_pub"
-        const val KEY_X25519_PRIV    = "x25519_priv"
+        const val KEY_KEM_PUB        = "kem_pub"
+        const val KEY_KEM_PRIV       = "kem_priv"
         const val KEY_DILITHIUM_PUB  = "dilithium_pub"
         const val KEY_DILITHIUM_PRIV = "dilithium_priv"
         const val KEY_ED25519_PUB    = "ed25519_pub"

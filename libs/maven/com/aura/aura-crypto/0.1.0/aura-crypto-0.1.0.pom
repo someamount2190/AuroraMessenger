@@ -11,12 +11,6 @@
   <version>0.1.0</version>
   <dependencies>
     <dependency>
-      <groupId>org.openquantumsafe</groupId>
-      <artifactId>liboqs-java</artifactId>
-      <version>0.3.0</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcprov-jdk18on</artifactId>
       <version>1.84</version>

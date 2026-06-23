@@ -19,8 +19,8 @@ fun testIdentity(tag: Int): NodeIdentity {
     val nodeId = ByteArray(32) { tag.toByte() }
     return NodeIdentity(
         nodeId,
-        NodePublicIdentity(nodeId, HybridPublicKey(ByteArray(8), ByteArray(32)), HybridVerifyKey(ByteArray(8), ByteArray(32))),
-        NodePrivateIdentity(nodeId, HybridPrivateKey(ByteArray(8), ByteArray(8), ByteArray(32)), HybridSigningKey(ByteArray(8), ByteArray(32)))
+        NodePublicIdentity(nodeId, HybridPublicKey(ByteArray(40)), HybridVerifyKey(ByteArray(8), ByteArray(32))),
+        NodePrivateIdentity(nodeId, HybridPrivateKey(ByteArray(32)), HybridSigningKey(ByteArray(8), ByteArray(32)))
     )
 }
 

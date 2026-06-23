@@ -30,12 +30,12 @@ class TwoPeerRendezvousTest {
         val nodeId = ByteArray(32) { tag.toByte() }
         val pub = NodePublicIdentity(
             nodeId,
-            HybridPublicKey(ByteArray(8), ByteArray(32)),
+            HybridPublicKey(ByteArray(40)),
             HybridVerifyKey(ByteArray(8), ByteArray(32))
         )
         val priv = NodePrivateIdentity(
             nodeId,
-            HybridPrivateKey(ByteArray(8), ByteArray(8), ByteArray(32)),
+            HybridPrivateKey(ByteArray(32)),
             HybridSigningKey(ByteArray(8), ByteArray(32))
         )
         return NodeIdentity(nodeId, pub, priv)

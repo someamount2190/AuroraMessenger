@@ -1,20 +1,18 @@
 package com.aura.crypto.testutil
 
-import com.aura.crypto.Hkdf
 import com.aura.crypto.HybridKem
 import kotlinx.coroutines.runBlocking
 
 /**
- * Detects whether the liboqs native library is loadable in the current test JVM.
- * Kyber/Dilithium go through JNI; on a plain desktop JVM without the native lib the
- * call fails, and the T2 suites use [available] with JUnit `Assume` to **skip** rather
- * than fail. On an Android emulator (jniLibs present) or a host with native liboqs
- * provisioned, [available] is true and the suites run for real.
+ * Historically gated the liboqs-native (Kyber/Dilithium) test tier. After the crypto
+ * re-engineering the entire stack is pure-JVM (BouncyCastle X-Wing + ML-DSA, Tink), so
+ * this always reports available; it is retained only so any remaining `Assume`-guarded
+ * suites keep compiling. The probe genuinely exercises BC X-Wing key generation.
  */
 object NativeCrypto {
     val available: Boolean by lazy {
         try {
-            runBlocking { HybridKem(Hkdf()).generateKyberKeyPair().isSuccess }
+            runBlocking { HybridKem().generateKeyPair().isSuccess }
         } catch (t: Throwable) {
             false
         }

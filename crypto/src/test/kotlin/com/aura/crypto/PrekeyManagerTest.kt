@@ -1,10 +1,7 @@
 package com.aura.crypto
 
 import com.aura.crypto.testutil.FakePrekeyStore
-import com.aura.crypto.testutil.NativeCrypto
 import kotlinx.coroutines.test.runTest
-import org.junit.Assume.assumeTrue
-import org.junit.Before
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -12,15 +9,13 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** T2 (native liboqs — PQXDH prekeys). Skips when the native lib is unavailable. */
+/** Pure-JVM now: X-Wing PQXDH prekeys, no liboqs. */
 class PrekeyManagerTest {
 
     private val hkdf = Hkdf()
-    private val kem = HybridKem(hkdf)
+    private val kem = HybridKem()
     private val signer = HybridSigner()
     private val gen = NodeIdentityGenerator(kem, signer, hkdf)
-
-    @Before fun requireNative() = assumeTrue("liboqs native unavailable", NativeCrypto.available)
 
     @Test fun publicBundle_isSignedAndPopulated() = runTest {
         val store = FakePrekeyStore()

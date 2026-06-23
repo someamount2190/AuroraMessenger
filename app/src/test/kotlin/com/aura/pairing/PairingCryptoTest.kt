@@ -77,7 +77,7 @@ class PairingCryptoTest {
     private fun b64(b: ByteArray) = Base64.encodeToString(b, Base64.NO_WRAP)
 
     @Test fun nodeIdMatches_trueForCommittedKeys_falseOtherwise() {
-        val kemPub = HybridPublicKey(ByteArray(1568) { (it * 3).toByte() }, ByteArray(32) { it.toByte() })
+        val kemPub = HybridPublicKey(ByteArray(1216) { (it * 3).toByte() })
         val dil = ByteArray(1952) { (it * 5).toByte() }
         val ed = ByteArray(32) { (it + 7).toByte() }
         val signPub = HybridVerifyKey(dil, ed)

@@ -27,12 +27,10 @@ data class PrekeyEntity(
     @PrimaryKey val prekeyId: String,
     /** "spk" (signed prekey) or "opk" (one-time prekey). */
     val kind: String,
-    /** Public halves (Base64) — what an initiator encapsulates against. */
-    val kyberPubB64: String,
-    val x25519PubB64: String,
-    /** Private halves (Base64) — used to decapsulate, then destroyed. */
-    val kyberPrivB64: String,
-    val x25519PrivB64: String,
+    /** X-Wing public key (Base64) — what an initiator encapsulates against. */
+    val kemPubB64: String,
+    /** X-Wing private key seed (Base64) — used to decapsulate, then destroyed. */
+    val kemPrivB64: String,
     val createdAtMs: Long,
     /** Set when consumed (OPKs are deleted outright; column kept for future SPK accounting). */
     val usedAtMs: Long? = null

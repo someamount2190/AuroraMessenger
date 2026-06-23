@@ -66,7 +66,7 @@ class StoreAdapterConformanceTest {
     }
 
     private fun prekey(id: String, kind: String, created: Long) =
-        PrekeyRecord(id, kind, "kp", "xp", "kpr", "xpr", created)
+        PrekeyRecord(id, kind, "kp", "kpr", created)
 
     private suspend fun prekeyContract(store: PrekeyStore) {
         store.insert(prekey("s1", "spk", 1))

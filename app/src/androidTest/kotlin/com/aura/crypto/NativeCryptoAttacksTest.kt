@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
 class NativeCryptoAttacksTest {
 
     private val hkdf = Hkdf()
-    private val kem = HybridKem(hkdf)
+    private val kem = HybridKem()
     private val signer = HybridSigner()
 
     // ── Sanity: the native primitives work at all ───────────────────────────────
@@ -32,23 +32,24 @@ class NativeCryptoAttacksTest {
     }
 
     // ── Hybrid KEM partial-break: defeating ONE primitive is not enough ─────────
-    @Test fun kem_partialBreak_kyberOnly_divergesSecret() = runBlocking {
+    @Test fun kem_partialBreak_mlkemRegion_divergesSecret() = runBlocking {
         val kp = kem.generateKeyPair().getOrThrow()
         val enc = kem.encapsulate(kp.publicKey).getOrThrow()
+        // Corrupt the leading ML-KEM-768 region of the X-Wing ciphertext.
         val bad = HybridCiphertext(
-            enc.ciphertext.kyberCiphertext.copyOf().also { it[0] = (it[0].toInt() xor 0x01).toByte() },
-            enc.ciphertext.x25519EphPublicKey
+            enc.ciphertext.encoded.copyOf().also { it[0] = (it[0].toInt() xor 0x01).toByte() }
         )
         val r = kem.decapsulate(bad, kp.privateKey)
         assertTrue(r.isFailure || !r.getOrThrow().contentEquals(enc.sharedSecret))
     }
 
-    @Test fun kem_partialBreak_x25519Only_divergesSecret() = runBlocking {
+    @Test fun kem_partialBreak_x25519Region_divergesSecret() = runBlocking {
         val kp = kem.generateKeyPair().getOrThrow()
         val enc = kem.encapsulate(kp.publicKey).getOrThrow()
+        // Corrupt the trailing X25519 ephemeral-key region of the X-Wing ciphertext.
+        val ct = enc.ciphertext.encoded
         val bad = HybridCiphertext(
-            enc.ciphertext.kyberCiphertext,
-            enc.ciphertext.x25519EphPublicKey.copyOf().also { it[0] = (it[0].toInt() xor 0x01).toByte() }
+            ct.copyOf().also { it[ct.size - 1] = (it[ct.size - 1].toInt() xor 0x01).toByte() }
         )
         val r = kem.decapsulate(bad, kp.privateKey)
         assertTrue(r.isFailure || !r.getOrThrow().contentEquals(enc.sharedSecret))

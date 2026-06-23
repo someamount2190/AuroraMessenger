@@ -219,7 +219,7 @@ class ScannerPairing @Inject constructor(
             sIK = rIK.sharedSecret, sSPK = rSPK.sharedSecret, sOPK = rOPK?.sharedSecret,
             spkId = bundle.spkId, opkId = opkId,
             ctIK = ctIK, ctSpk = ctSpk, ctOpk = ctOpk,
-            responderKyberPub = payload.kemPublicKey.kyberPublicKey
+            responderKemPub = payload.kemPublicKey.encoded
         )
         rIK.sharedSecret.fill(0); rSPK.sharedSecret.fill(0); rOPK?.sharedSecret?.fill(0)
         return FsEncap(

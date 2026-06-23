@@ -10,18 +10,16 @@ import com.aura.crypto.PrekeyStore
 class RoomPrekeyStore(private val dao: PrekeyDao) : PrekeyStore {
 
     private fun PrekeyEntity.toRecord() = PrekeyRecord(
-        prekeyId, kind, kyberPubB64, x25519PubB64, kyberPrivB64, x25519PrivB64, createdAtMs
+        prekeyId, kind, kemPubB64, kemPrivB64, createdAtMs
     )
 
     override suspend fun insert(prekey: PrekeyRecord) = dao.insert(
         PrekeyEntity(
-            prekeyId      = prekey.prekeyId,
-            kind          = prekey.kind,
-            kyberPubB64   = prekey.kyberPubB64,
-            x25519PubB64  = prekey.x25519PubB64,
-            kyberPrivB64  = prekey.kyberPrivB64,
-            x25519PrivB64 = prekey.x25519PrivB64,
-            createdAtMs   = prekey.createdAtMs
+            prekeyId    = prekey.prekeyId,
+            kind        = prekey.kind,
+            kemPubB64   = prekey.kemPubB64,
+            kemPrivB64  = prekey.kemPrivB64,
+            createdAtMs = prekey.createdAtMs
         )
     )
 
