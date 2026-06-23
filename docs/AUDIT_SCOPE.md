@@ -19,6 +19,7 @@ already know about. It is the map; the territory is the source and the rest of `
 | [`docs/KEY_MANAGEMENT.md`](KEY_MANAGEMENT.md) · [`docs/DATA_AT_REST.md`](DATA_AT_REST.md) | Key lifecycle & at-rest data |
 | [`docs/DEPENDENCIES.md`](DEPENDENCIES.md) · [`docs/BUILD_REPRODUCIBILITY.md`](BUILD_REPRODUCIBILITY.md) | Supply chain & build |
 | [`docs/MONOLITH_AUDIT.md`](MONOLITH_AUDIT.md) | Structural-health pass: monolithic files & decomposition plan |
+| [`docs/CRYPTO_TEST_VECTORS.md`](CRYPTO_TEST_VECTORS.md) | Per-primitive test-vector / KAT sources & applicability |
 | [`SECURITY.md`](../SECURITY.md) | Disclosure policy |
 
 ## System under review
