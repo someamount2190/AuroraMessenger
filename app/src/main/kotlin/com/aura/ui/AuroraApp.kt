@@ -156,7 +156,6 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
                 is com.aura.pairing.PairEvent.Declined -> "Your request was declined"
                 is com.aura.pairing.PairEvent.Failed   -> "Verification failed — contact removed"
                 is com.aura.pairing.PairEvent.ContactRemoved -> "${ev.name} removed you as a contact"
-                is com.aura.pairing.PairEvent.WeakPairing -> "Paired, but without forward secrecy — the contact's keys were unavailable"
                 is com.aura.pairing.PairEvent.IncomingRequest -> "Someone wants to connect"
             }
             android.widget.Toast.makeText(appContext, msg, android.widget.Toast.LENGTH_SHORT).show()

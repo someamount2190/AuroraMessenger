@@ -56,45 +56,38 @@ class ReceiverPairing @Inject constructor(
         val opkId = json.optString("opkId").ifEmpty { null }
         val ctOpk = json.optString("ctOpk").ifEmpty { null }
 
-        val rootB64: String = if (spkId != null && ctSpk != null) {
-            // Forward-secret (PQXDH) request: verify the signature, then consume OUR
-            // prekeys and fold identity + signed prekey (+ one-time prekey) into the same
-            // root the scanner derived. The one-time prekey is destroyed on consume.
-            val signedPart = "aura-pairreq-v2|$from|$myNodeIdHex|$ctB64|$ctSpk|${ctOpk ?: "-"}|$spkId|${opkId ?: "-"}"
-            require(pairingSignal.verifyEd(signedPart, ed25519B64, json.optString("sig"))) { "pair-req(v2) signature failed" }
-            val consumed = prekeys.consume(spkId, opkId) ?: error("unknown signed prekey")
-            if (consumed.opkMissing) {
-                // The one-time prekey was already used (stale / reused code) — fail closed
-                // and ask the scanner to regenerate, rather than pair on a mismatched root.
-                pairingSignal.sendSimple("pairreject", myNodeIdHex, from, identity)
-                return@runCatching Unit
-            }
-            val ctIKb  = Base64.decode(ctB64, Base64.NO_WRAP)
-            val ctSpkb = Base64.decode(ctSpk, Base64.NO_WRAP)
-            val ctOpkb = ctOpk?.let { Base64.decode(it, Base64.NO_WRAP) }
-            val sIK  = kem.decapsulate(HybridCiphertext.fromBytes(ctIKb), identity.privatePart.kemPrivateKey).getOrThrow()
-            val sSPK = kem.decapsulate(HybridCiphertext.fromBytes(ctSpkb), consumed.spkPriv).getOrThrow()
-            val opkPriv = consumed.opkPriv   // local val: opkPriv is a cross-module nullable, can't smart-cast in place
-            val sOPK = if (ctOpkb != null && opkPriv != null)
-                kem.decapsulate(HybridCiphertext.fromBytes(ctOpkb), opkPriv).getOrThrow() else null
-            val root = pairingCrypto.fsRoot(
-                initiatorHex = from, responderHex = myNodeIdHex,
-                sIK = sIK, sSPK = sSPK, sOPK = sOPK,
-                spkId = spkId, opkId = opkId,
-                ctIK = ctIKb, ctSpk = ctSpkb, ctOpk = ctOpkb,
-                responderKemPub = identity.publicPart.kemPublicKey.encoded
-            )
-            sIK.fill(0); sSPK.fill(0); sOPK?.fill(0)
-            Base64.encodeToString(root, Base64.NO_WRAP).also { root.fill(0) }
-        } else {
-            // Legacy identity-only request.
-            val signedPart = "aura-pairreq-v1|$from|$myNodeIdHex|$ctB64"
-            require(pairingSignal.verifyEd(signedPart, ed25519B64, json.optString("sig"))) { "pair-req signature failed" }
-            val ciphertext = HybridCiphertext.fromBytes(Base64.decode(ctB64, Base64.NO_WRAP))
-            val s = kem.decapsulate(ciphertext, identity.privatePart.kemPrivateKey).getOrThrow()
-            val root = pairingCrypto.legacyRoot(s); s.fill(0)
-            Base64.encodeToString(root, Base64.NO_WRAP).also { root.fill(0) }
+        // Forward-secret (PQXDH) request is MANDATORY — the legacy identity-only (no-FS)
+        // handshake has been removed. A request without a signed prekey is rejected.
+        require(spkId != null && ctSpk != null) { "pair-req missing forward-secret prekey (legacy no-FS pairing is no longer accepted)" }
+        // Verify the signature, then consume OUR prekeys and fold identity + signed prekey
+        // (+ one-time prekey) into the same root the scanner derived. The one-time prekey is
+        // destroyed on consume.
+        val signedPart = "aura-pairreq-v2|$from|$myNodeIdHex|$ctB64|$ctSpk|${ctOpk ?: "-"}|$spkId|${opkId ?: "-"}"
+        require(pairingSignal.verifyEd(signedPart, ed25519B64, json.optString("sig"))) { "pair-req(v2) signature failed" }
+        val consumed = prekeys.consume(spkId, opkId) ?: error("unknown signed prekey")
+        if (consumed.opkMissing) {
+            // The one-time prekey was already used (stale / reused code) — fail closed
+            // and ask the scanner to regenerate, rather than pair on a mismatched root.
+            pairingSignal.sendSimple("pairreject", myNodeIdHex, from, identity)
+            return@runCatching Unit
         }
+        val ctIKb  = Base64.decode(ctB64, Base64.NO_WRAP)
+        val ctSpkb = Base64.decode(ctSpk, Base64.NO_WRAP)
+        val ctOpkb = ctOpk?.let { Base64.decode(it, Base64.NO_WRAP) }
+        val sIK  = kem.decapsulate(HybridCiphertext.fromBytes(ctIKb), identity.privatePart.kemPrivateKey).getOrThrow()
+        val sSPK = kem.decapsulate(HybridCiphertext.fromBytes(ctSpkb), consumed.spkPriv).getOrThrow()
+        val opkPriv = consumed.opkPriv   // local val: opkPriv is a cross-module nullable, can't smart-cast in place
+        val sOPK = if (ctOpkb != null && opkPriv != null)
+            kem.decapsulate(HybridCiphertext.fromBytes(ctOpkb), opkPriv).getOrThrow() else null
+        val root = pairingCrypto.fsRoot(
+            initiatorHex = from, responderHex = myNodeIdHex,
+            sIK = sIK, sSPK = sSPK, sOPK = sOPK,
+            spkId = spkId, opkId = opkId,
+            ctIK = ctIKb, ctSpk = ctSpkb, ctOpk = ctOpkb,
+            responderKemPub = identity.publicPart.kemPublicKey.encoded
+        )
+        sIK.fill(0); sSPK.fill(0); sOPK?.fill(0)
+        val rootB64: String = Base64.encodeToString(root, Base64.NO_WRAP).also { root.fill(0) }
 
         contactDao.upsert(
             ContactEntity(

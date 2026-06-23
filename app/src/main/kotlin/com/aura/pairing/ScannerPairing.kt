@@ -51,34 +51,18 @@ class ScannerPairing @Inject constructor(
         val kemB64 = Base64.encodeToString(payload.kemPublicKey.toBytes(), Base64.NO_WRAP)
         val ed25519B64 = Base64.encodeToString(payload.ed25519Pub, Base64.NO_WRAP)
 
-        // Forward-secret (PQXDH) path when the peer advertises prekeys and we can fetch a
-        // verified bundle: encapsulate to their identity key + signed prekey + one-time
-        // prekey and fold all three into the root. Otherwise fall back to the legacy
-        // identity-only encapsulation. Either way we store the finished 32-byte pairing
-        // *root* (not the raw KEM secret), so Accept just seeds the ratchet from it.
+        // Forward-secret (PQXDH) handshake is MANDATORY: encapsulate to the peer's identity
+        // key + signed prekey + one-time prekey and fold all three into the root. The legacy
+        // identity-only (no-forward-secrecy) fallback has been removed — if the peer publishes
+        // no verifiable prekey bundle (no prekeys advertised, server can't serve it, or an
+        // attacker suppresses it to strip forward secrecy) we FAIL CLOSED rather than pair
+        // without forward secrecy. We store the finished 32-byte pairing *root* (not the raw
+        // KEM secret), so Accept just seeds the ratchet from it.
         val fs = tryFsEncapsulate(payload, myNodeIdHex)
-        // Downgrade guard: the peer advertised forward-secret prekeys (pkVersion ≥ 1) but we
-        // got no usable bundle. That's either a transient server issue or an active attacker
-        // suppressing the bundle to strip forward secrecy. We still pair (legacy is mutually
-        // authenticated and SAS/MITM-protected) but WARN the user that this pairing is not
-        // forward-secret, rather than downgrading silently.
-        if (fs == null && payload.pkVersion >= 1) {
-            android.util.Log.w("AuroraPairing", "FS prekeys advertised but unavailable — pairing WITHOUT forward secrecy (possible downgrade)")
-            events.emit(PairEvent.WeakPairing(payload.nodeIdHex))
-        }
-        val ctB64: String
-        val rootB64: String
-        if (fs != null) {
-            ctB64 = fs.ctIK
-            rootB64 = fs.rootB64
-        } else {
-            val kemResult = kem.encapsulate(payload.kemPublicKey).getOrThrow()
-            ctB64 = Base64.encodeToString(kemResult.ciphertext.toBytes(), Base64.NO_WRAP)
-            val root = pairingCrypto.legacyRoot(kemResult.sharedSecret)
-            kemResult.sharedSecret.fill(0)
-            rootB64 = Base64.encodeToString(root, Base64.NO_WRAP)
-            root.fill(0)
-        }
+            ?: error("Cannot pair: no forward-secret prekey bundle available for this contact. " +
+                     "Ask them to regenerate their code and try again.")
+        val ctB64 = fs.ctIK
+        val rootB64 = fs.rootB64
 
         // Hold the pairing root in the (SQLCipher-encrypted) row so Accept survives a restart.
         contactDao.upsert(
@@ -97,10 +81,8 @@ class ScannerPairing @Inject constructor(
             )
         )
 
-        val signedPart = if (fs != null)
+        val signedPart =
             "aura-pairreq-v2|$myNodeIdHex|${payload.nodeIdHex}|$ctB64|${fs.ctSpk}|${fs.ctOpk ?: "-"}|${fs.spkId}|${fs.opkId ?: "-"}"
-        else
-            "aura-pairreq-v1|$myNodeIdHex|${payload.nodeIdHex}|$ctB64"
         val signature = pairingSignal.sign(signedPart, identity) ?: error("pairreq signature failed")
         val message = JSONObject()
             .put("type", "pairreq")
@@ -111,13 +93,11 @@ class ScannerPairing @Inject constructor(
             .put("dilithium", Base64.encodeToString(identity.publicPart.signingPublicKey.dilithiumPublicKey, Base64.NO_WRAP))
             .put("ct", ctB64)
             .put("sig", Base64.encodeToString(signature, Base64.NO_WRAP))
+            .put("spkId", fs.spkId)
+            .put("ctSpk", fs.ctSpk)
             .apply {
-                if (fs != null) {
-                    put("spkId", fs.spkId)
-                    put("ctSpk", fs.ctSpk)
-                    fs.ctOpk?.let { put("ctOpk", it) }
-                    fs.opkId?.let { put("opkId", it) }
-                }
+                fs.ctOpk?.let { put("ctOpk", it) }
+                fs.opkId?.let { put("opkId", it) }
             }
             .toString()
         pairingSignal.post(payload.nodeIdHex, message)

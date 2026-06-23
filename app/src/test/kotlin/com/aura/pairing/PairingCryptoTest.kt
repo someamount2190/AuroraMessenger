@@ -25,18 +25,6 @@ class PairingCryptoTest {
     private val hkdf = Hkdf()
     private val pc = PairingCrypto(hkdf)
 
-    // ── legacyRoot ───────────────────────────────────────────────────────────
-    @Test fun legacyRoot_is32Bytes_andDeterministic() {
-        val s = ByteArray(32) { it.toByte() }
-        val a = pc.legacyRoot(s)
-        assertEquals(32, a.size)
-        assertTrue(a.contentEquals(pc.legacyRoot(s)))
-    }
-
-    @Test fun legacyRoot_differentSecret_differentRoot() {
-        assertFalse(pc.legacyRoot(ByteArray(32) { 1 }).contentEquals(pc.legacyRoot(ByteArray(32) { 2 })))
-    }
-
     // ── fsRoot ───────────────────────────────────────────────────────────────
     private fun fsRoot(
         sIK: ByteArray = ByteArray(32) { 1 },

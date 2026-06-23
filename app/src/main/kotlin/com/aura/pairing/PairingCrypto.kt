@@ -18,10 +18,6 @@ import javax.inject.Inject
  */
 class PairingCrypto @Inject constructor(private val hkdf: Hkdf) {
 
-    /** Legacy (identity-only) ratchet root from the single KEM shared secret. */
-    fun legacyRoot(s: ByteArray): ByteArray =
-        hkdf.derive(ikm = s, info = "aura-pair-root-v3".toByteArray(), outputLen = 32)
-
     /**
      * Forward-secret (PQXDH) root, mixing the identity-key secret with the signed-prekey
      * and (optional) one-time-prekey secrets. Both peers compute this identically: the
