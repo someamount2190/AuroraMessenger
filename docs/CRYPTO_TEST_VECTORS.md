@@ -101,3 +101,8 @@ below runs in `crypto/src/test` on CI:
   signature size, plus hybrid sign/verify and per-component tamper rejection (pure-JVM).
 - `crypto/src/test/.../HybridKemTest.kt` — **X-Wing** encapsulate/decapsulate agreement and
   ciphertext-tamper divergence across the ML-KEM and X25519 regions (pure-JVM).
+- `crypto/src/test/.../PqcKatTest.kt` — deterministic KAT/regression harness for **ML-KEM-768**,
+  **ML-DSA-65**, and **X-Wing**: a fixed reproducible RNG drives keygen/encaps so outputs are
+  deterministic; asserts exact FIPS sizes (incl. ML-DSA-65 = 3309 B), round-trip correctness,
+  run-to-run determinism, and a **pinned SHA-256 digest** of each public output as a
+  cross-version tripwire (catches a BC bump or X-Wing draft revision silently changing output).
