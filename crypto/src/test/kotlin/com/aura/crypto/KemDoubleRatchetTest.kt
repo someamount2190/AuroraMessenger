@@ -161,6 +161,38 @@ class KemDoubleRatchetTest {
         assertContentEquals("followup".toByteArray(), dr.decrypt(bob, followup))
     }
 
+    /** The caller-supplied associated data is bound into the AEAD: a mismatch is rejected. */
+    @Test fun aadBinding_mismatchRejected() = runBlocking {
+        val (alice, bob) = pair()
+        val m = dr.encrypt(alice, "secret".toByteArray(), aad = "context-A".toByteArray())
+        assertNull(dr.decrypt(bob, m, aad = "context-B".toByteArray()))
+        assertContentEquals("secret".toByteArray(), dr.decrypt(bob, m, aad = "context-A".toByteArray()))
+    }
+
+    /** The ratchet header (here the advertised ratchet public key) is AEAD-AAD-bound, so
+     *  tampering it fails authentication — and leaves the session intact for the real frame. */
+    @Test fun tamperedHeader_rejected_stateSurvives() = runBlocking {
+        val (alice, bob) = pair()
+        val m = dr.encrypt(alice, "hi".toByteArray())
+        val badPub = HybridPublicKey(
+            m.header.ratchetPub.encoded.copyOf().also { it[0] = (it[0].toInt() xor 0x01).toByte() }
+        )
+        val bad = m.copy(header = m.header.copy(ratchetPub = badPub))
+        assertNull(dr.decrypt(bob, bad))
+        assertContentEquals("hi".toByteArray(), dr.decrypt(bob, m))
+    }
+
+    /** Skip-flood guard: a frame more than MAX_SKIP message numbers ahead is refused rather
+     *  than forcing the receiver to derive an unbounded run of chain keys. */
+    @Test fun skipFloodBeyondBound_rejected() = runBlocking {
+        val (alice, bob) = pair()
+        val first = dr.encrypt(alice, "first".toByteArray())   // n=0, establishes the epoch
+        var far = first
+        repeat(KemDoubleRatchet.MAX_SKIP + 2) { far = dr.encrypt(alice, "m".toByteArray()) }
+        assertContentEquals("first".toByteArray(), dr.decrypt(bob, first))   // nr → 1
+        assertNull(dr.decrypt(bob, far))   // gap (>512) exceeds MAX_SKIP → refused
+    }
+
     @Test fun initialState_isConsistent() = runBlocking {
         val (alice, bob) = pair()
         // Alice owes a sending step; Bob waits to receive.

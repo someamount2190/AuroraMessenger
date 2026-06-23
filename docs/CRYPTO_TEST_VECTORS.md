@@ -85,6 +85,12 @@ below runs in `crypto/src/test` on CI:
 
 ### Implemented
 
+- `crypto/src/test/.../ClassicalKatTest.kt` — **authoritative** known-answer tests:
+  **Ed25519 RFC 8032 §7.1** (TEST1 empty-message + TEST2, through Aurora's own
+  `signEd25519Only`/`verifyEd25519Only`, plus a wrong-key rejection) and **X25519 RFC 7748
+  §5.2** (both single vectors + the one-iteration iterative value) on the BC primitive that is
+  X-Wing's classical half. Self-validating: each pins a full cryptographic relation, so a
+  mistranscribed byte fails the test rather than passing silently.
 - `crypto/src/test/.../HkdfRfc5869KatTest.kt` — **RFC 5869 Appendix A** KATs (HMAC-SHA-256
   cases 1–3 + null/empty-salt equivalence) against the BC-backed `Hkdf`. The move from
   HKDF-SHA3-256 to HKDF-SHA-256 is what makes these authoritative external vectors apply.
