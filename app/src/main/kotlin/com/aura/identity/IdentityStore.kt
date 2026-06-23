@@ -42,7 +42,7 @@ class IdentityStore @Inject constructor(
     private val signer: HybridSigner,
     private val hkdf:   Hkdf,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
-) {
+) : IdentityProvider {
     private val mutex = Mutex()
     @Volatile private var cached: NodeIdentity? = null
 
@@ -60,13 +60,13 @@ class IdentityStore @Inject constructor(
     }
 
     /** Load the persisted identity, generating it on first launch. Thread-safe. */
-    suspend fun getOrCreate(): NodeIdentity = cached ?: mutex.withLock {
+    override suspend fun getOrCreate(): NodeIdentity = cached ?: mutex.withLock {
         cached ?: withContext(ioDispatcher) {
             load() ?: generateAndPersist()
         }.also { cached = it }
     }
 
-    val nodeIdHexOrNull: String?
+    override val nodeIdHexOrNull: String?
         get() = cached?.nodeId?.toHex()
 
     /** Wipe the identity (Settings → Clear all data). The next launch regenerates. */

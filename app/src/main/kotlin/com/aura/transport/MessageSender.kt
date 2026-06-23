@@ -8,7 +8,7 @@ import com.aura.db.ContactEntity
 import com.aura.db.MeshPeerDao
 import com.aura.db.MeshPeerEntity
 import com.aura.db.MessageDao
-import com.aura.identity.IdentityStore
+import com.aura.identity.IdentityProvider
 import com.aura.network.Rendezvous
 import com.aura.settings.AuroraSettings
 import com.aura.transport.rtc.PeerTransport
@@ -36,7 +36,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class MessageSender @Inject constructor(
-    private val identityManager: IdentityStore,
+    private val identityManager: IdentityProvider,
     private val ratchet: RatchetManager,
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,

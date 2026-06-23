@@ -6,7 +6,7 @@ import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.db.MessageDao
 import com.aura.db.MessageEntity
-import com.aura.identity.IdentityStore
+import com.aura.identity.IdentityProvider
 import com.aura.di.IoDispatcher
 import com.aura.settings.AuroraSettings
 import com.aura.ux.MessagePulse
@@ -33,7 +33,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class TcpMessageServer @Inject constructor(
-    private val identityManager: IdentityStore,
+    private val identityManager: IdentityProvider,
     private val ratchet: RatchetManager,
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
