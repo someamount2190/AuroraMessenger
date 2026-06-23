@@ -1,5 +1,7 @@
 package com.aura.crypto
 
+import java.io.ByteArrayOutputStream
+
 /**
  * **Post-quantum asymmetric (KEM) Double Ratchet** — Phase 5 of
  * [docs/CRYPTO_MIGRATION_PLAN.md], specified in [docs/PQ_RATCHET_DESIGN.md].
@@ -237,5 +239,88 @@ class KemDoubleRatchet(
         const val MAX_SKIP = 512
         /** Cap on retained skipped keys per session. */
         const val MAX_SKIPPED_STORED = 1024
+    }
+}
+
+/**
+ * Binary (de)serialization for the KEM Double Ratchet — the substrate the transport
+ * integration needs: [messageToBytes]/[messageFromBytes] give a **self-contained wire frame**
+ * (header ‖ AEAD ciphertext), and [sessionToBytes]/[sessionFromBytes] persist the full
+ * [KemDoubleRatchet.Session] (root, chains, ratchet keypair, peer key, skipped cache) so it can
+ * be stored between messages via a `RatchetStore`. All lengths are 4-byte big-endian; an
+ * optional field is encoded as length −1.
+ */
+object KemRatchetCodec {
+
+    fun headerToBytes(h: KemDoubleRatchet.Header): ByteArray {
+        val w = Writer()
+        w.blob(h.ratchetPub.encoded)
+        w.opt(h.kemCt?.encoded)
+        w.int(h.pn); w.int(h.n)
+        return w.toByteArray()
+    }
+
+    fun headerFromBytes(bytes: ByteArray): KemDoubleRatchet.Header {
+        val r = Reader(bytes)
+        val pub = HybridPublicKey(r.blob())
+        val ct = r.opt()?.let { HybridCiphertext(it) }
+        return KemDoubleRatchet.Header(pub, ct, r.int(), r.int())
+    }
+
+    /** Self-contained frame: [4B header len][header][AEAD ciphertext]. */
+    fun messageToBytes(m: KemDoubleRatchet.Message): ByteArray {
+        val h = headerToBytes(m.header)
+        return Writer().apply { blob(h); raw(m.ciphertext) }.toByteArray()
+    }
+
+    fun messageFromBytes(bytes: ByteArray): KemDoubleRatchet.Message {
+        val r = Reader(bytes)
+        val header = headerFromBytes(r.blob())
+        return KemDoubleRatchet.Message(header, r.rest())
+    }
+
+    fun sessionToBytes(s: KemDoubleRatchet.Session): ByteArray {
+        val w = Writer()
+        w.blob(s.rootKey)
+        w.opt(s.sendChainKey); w.opt(s.recvChainKey)
+        w.int(s.ns); w.int(s.nr); w.int(s.pn)
+        w.opt(s.selfPriv?.encoded); w.opt(s.selfPub?.encoded); w.opt(s.peerPub?.encoded)
+        w.int(if (s.sendStepNeeded) 1 else 0)
+        w.int(s.skipped.size)
+        for ((k, v) in s.skipped) { w.blob(k.toByteArray(Charsets.UTF_8)); w.blob(v) }
+        return w.toByteArray()
+    }
+
+    fun sessionFromBytes(bytes: ByteArray): KemDoubleRatchet.Session {
+        val r = Reader(bytes)
+        val rootKey = r.blob()
+        val sendCk = r.opt(); val recvCk = r.opt()
+        val ns = r.int(); val nr = r.int(); val pn = r.int()
+        val selfPriv = r.opt()?.let { HybridPrivateKey(it) }
+        val selfPub = r.opt()?.let { HybridPublicKey(it) }
+        val peerPub = r.opt()?.let { HybridPublicKey(it) }
+        val sendStepNeeded = r.int() == 1
+        val skipped = LinkedHashMap<String, ByteArray>()
+        repeat(r.int()) { skipped[String(r.blob(), Charsets.UTF_8)] = r.blob() }
+        return KemDoubleRatchet.Session(
+            rootKey, sendCk, recvCk, ns, nr, pn, selfPriv, selfPub, peerPub, sendStepNeeded, skipped
+        )
+    }
+
+    private class Writer {
+        private val out = ByteArrayOutputStream()
+        fun raw(b: ByteArray) { out.write(b) }
+        fun int(v: Int) { out.write(intTo4Bytes(v)) }
+        fun blob(b: ByteArray) { int(b.size); out.write(b) }
+        fun opt(b: ByteArray?) { if (b == null) int(-1) else blob(b) }
+        fun toByteArray(): ByteArray = out.toByteArray()
+    }
+
+    private class Reader(private val b: ByteArray) {
+        private var p = 0
+        fun int(): Int { val v = readInt4(b, p); p += 4; return v }
+        fun blob(): ByteArray { val n = int(); require(n in 0..(b.size - p)) { "bad blob length $n" }; return b.copyOfRange(p, p + n).also { p += n } }
+        fun opt(): ByteArray? { val n = readInt4(b, p); return if (n < 0) { p += 4; null } else blob() }
+        fun rest(): ByteArray = b.copyOfRange(p, b.size)
     }
 }
