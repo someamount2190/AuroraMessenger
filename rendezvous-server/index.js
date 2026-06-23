@@ -57,10 +57,10 @@ const PREKEY_OPK_MAX = 100;              // cap on one-time prekeys retained per
 // (so older clients keep working during rollout); set STRICT_BINDING=1 once the new
 // app is rolled out to require it and fully close nodeId squatting.
 const STRICT_BINDING = process.env.STRICT_BINDING === '1';
-// Hybrid check-in signature size: [4B len][Dilithium-3 sig 3293][Ed25519 sig 64].
+// Hybrid check-in signature size: [4B len][ML-DSA-65 sig 3309][Ed25519 sig 64].
 // /find padding signatures match this length so the real candidate can't be
-// distinguished by signature size.
-const HYBRID_SIG_BYTES = 4 + 3293 + 64;
+// distinguished by signature size. (Was Dilithium-3's 3293 before the FIPS migration.)
+const HYBRID_SIG_BYTES = 4 + 3309 + 64;
 
 const nodes = new Map();           // nodeIdHex -> { ip, port, timestamp, sigB64, ed25519Pub, storedAt }
 const signals = new Map();         // nodeIdHex -> [payload, ...]
