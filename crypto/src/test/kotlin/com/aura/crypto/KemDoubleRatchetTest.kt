@@ -119,6 +119,48 @@ class KemDoubleRatchetTest {
         assertNull(dr.decrypt(stolen, secret), "stolen snapshot must NOT decrypt post-healing traffic")
     }
 
+    /** A message left over from a previous epoch is still decryptable after the ratchet has
+     *  stepped, via keys cached when we skipped past it (the `pn` count drives that skip). */
+    @Test fun outOfOrder_acrossEpochs_usesSkippedKeys() = runBlocking {
+        val (alice, bob) = pair()
+        val m0 = dr.encrypt(alice, "m0".toByteArray())   // epoch A, step
+        val m1 = dr.encrypt(alice, "m1".toByteArray())   // epoch A, n=1 — delayed in flight
+        assertContentEquals("m0".toByteArray(), dr.decrypt(bob, m0))
+        dr.decrypt(alice, dr.encrypt(bob, "r0".toByteArray()))   // Bob→Alice; Alice now owes a step
+        val m2 = dr.encrypt(alice, "m2".toByteArray())   // epoch C step, pn=2 (epoch A had 2 msgs)
+        assertContentEquals("m2".toByteArray(), dr.decrypt(bob, m2))   // skips+caches A.m1 while stepping
+        assertContentEquals("m1".toByteArray(), dr.decrypt(bob, m1))   // delayed A.m1 from the cache
+    }
+
+    /** Both peers step at the same time (each sends before receiving the other's step); after
+     *  the crossed step messages are delivered the session still converges both directions. */
+    @Test fun simultaneousSteps_converge() = runBlocking {
+        val (alice, bob) = pair()
+        dr.decrypt(bob, dr.encrypt(alice, "warm".toByteArray()))    // both learn each other's keys
+        dr.decrypt(alice, dr.encrypt(bob, "warm2".toByteArray()))
+        // Both now owe a sending step; both send before receiving the other's.
+        val a1 = dr.encrypt(alice, "a1".toByteArray())
+        val b1 = dr.encrypt(bob, "b1".toByteArray())
+        assertContentEquals("a1".toByteArray(), dr.decrypt(bob, a1))
+        assertContentEquals("b1".toByteArray(), dr.decrypt(alice, b1))
+        // Still able to talk both ways afterwards.
+        assertContentEquals("a2".toByteArray(), dr.decrypt(bob, dr.encrypt(alice, "a2".toByteArray())))
+        assertContentEquals("b2".toByteArray(), dr.decrypt(alice, dr.encrypt(bob, "b2".toByteArray())))
+    }
+
+    /** KEM-DR delivery property: an epoch's later messages can't be opened until that epoch's
+     *  first (step, ciphertext-bearing) message arrives — then both decrypt. */
+    @Test fun droppedStepMessage_blocksEpochUntilItArrives() = runBlocking {
+        val (alice, bob) = pair()
+        dr.decrypt(bob, dr.encrypt(alice, "m0".toByteArray()))
+        dr.decrypt(alice, dr.encrypt(bob, "r0".toByteArray()))   // Alice owes a step
+        val step = dr.encrypt(alice, "step".toByteArray())       // epoch C, carries the KEM ct
+        val followup = dr.encrypt(alice, "followup".toByteArray()) // epoch C, n=1, no ct
+        assertNull(dr.decrypt(bob, followup))                    // can't establish the epoch yet
+        assertContentEquals("step".toByteArray(), dr.decrypt(bob, step))
+        assertContentEquals("followup".toByteArray(), dr.decrypt(bob, followup))
+    }
+
     @Test fun initialState_isConsistent() = runBlocking {
         val (alice, bob) = pair()
         // Alice owes a sending step; Bob waits to receive.
