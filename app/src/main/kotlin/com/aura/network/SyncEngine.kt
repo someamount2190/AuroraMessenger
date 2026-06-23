@@ -39,7 +39,7 @@ import javax.inject.Singleton
 @Singleton
 class SyncEngine @Inject constructor(
     private val identityManager: IdentityStore,
-    private val rendezvousClient: RendezvousClient,
+    private val rendezvousClient: Rendezvous,
     private val prekeyManager: PrekeyManager,
     private val pairingManager: PairingCoordinator,
     private val messageSender: MessageSender,

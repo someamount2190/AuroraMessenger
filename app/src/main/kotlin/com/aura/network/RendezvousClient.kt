@@ -21,19 +21,18 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** A signed signal drain was rejected (e.g. the server lost our registration). */
-class DrainUnauthorizedException : Exception("signal drain unauthorized — re-check-in needed")
-
 /**
- * Client side of the rendezvous protocol. Phase 0 uses it for the two-emulator
- * check-in test (driven from Settings); Phase 3 wires it to run on launch and
- * every 5 minutes.
+ * Production [Rendezvous]: the TLS+pinned HTTP client. (Phase 0 used it for the
+ * two-emulator check-in test; it now runs on launch and every 5 minutes.) The
+ * transferable types ([FindCandidate], [PrekeyBundle], [DrainUnauthorizedException])
+ * and the interface itself live in Rendezvous.kt so an in-memory broker can implement
+ * the same contract for two-peer simulation.
  */
 @Singleton
 class RendezvousClient @Inject constructor(
     private val signer: HybridSigner,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
-) {
+) : Rendezvous {
     private val http = pinned(
         OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
@@ -94,23 +93,16 @@ class RendezvousClient @Inject constructor(
             .addHeader("X-Drain-Sig", Base64.encodeToString(sig, Base64.NO_WRAP))
     }
 
-    data class FindCandidate(
-        val ip: String,
-        val port: Int,
-        val timestampMs: Long,
-        val signatureB64: String
-    )
-
     /**
      * Sign and POST a check-in for [identity] to [serverBaseUrl].
      * [advertisedOverride] ("ip:port") replaces the auto-detected address —
      * see [com.aura.settings.AuroraSettings.advertisedAddress].
      */
-    suspend fun checkIn(
+    override suspend fun checkIn(
         serverBaseUrl: String,
         identity: NodeIdentity,
-        listenPort: Int = DEFAULT_LISTEN_PORT,
-        advertisedOverride: String? = null
+        listenPort: Int,
+        advertisedOverride: String?
     ): Result<String> = withContext(ioDispatcher) {
         runCatching {
             val nodeIdHex = identity.nodeId.toHex()
@@ -165,7 +157,7 @@ class RendezvousClient @Inject constructor(
      * GET /find/{nodeIdHex} and return all 10 candidates. The caller verifies
      * which candidate's signature matches the target node's Ed25519 public key.
      */
-    suspend fun find(serverBaseUrl: String, nodeIdHex: String): Result<List<FindCandidate>> =
+    override suspend fun find(serverBaseUrl: String, nodeIdHex: String): Result<List<FindCandidate>> =
         withContext(ioDispatcher) {
             runCatching {
                 val request = Request.Builder()
@@ -194,7 +186,7 @@ class RendezvousClient @Inject constructor(
      * Probe a rendezvous base URL with a short-timeout GET /checkin.
      * Used by the scanner to pick the first reachable candidate from a host QR.
      */
-    suspend fun probe(serverBaseUrl: String): Boolean = withContext(ioDispatcher) {
+    override suspend fun probe(serverBaseUrl: String): Boolean = withContext(ioDispatcher) {
         runCatching {
             val request = Request.Builder().url("$serverBaseUrl/checkin").get().build()
             probeHttp.newCall(request).execute().use { it.isSuccessful }
@@ -202,13 +194,13 @@ class RendezvousClient @Inject constructor(
     }
 
     /** Return the first candidate URL that responds, or null if none do. */
-    suspend fun firstReachable(candidates: List<String>): String? {
+    override suspend fun firstReachable(candidates: List<String>): String? {
         for (url in candidates) if (probe(url)) return url
         return null
     }
 
     /** POST an opaque payload to [nodeIdHex]'s signal queue (pairing, call signaling). */
-    suspend fun postSignal(serverBaseUrl: String, nodeIdHex: String, payload: String): Result<Unit> =
+    override suspend fun postSignal(serverBaseUrl: String, nodeIdHex: String, payload: String): Result<Unit> =
         withContext(ioDispatcher) {
             runCatching {
                 val request = Request.Builder()
@@ -227,7 +219,7 @@ class RendezvousClient @Inject constructor(
      * could steal or delete its queued pairing/call signals. Throws
      * [DrainUnauthorizedException] on a 401 so the caller can re-register and retry.
      */
-    suspend fun getSignals(serverBaseUrl: String, identity: NodeIdentity): Result<List<String>> =
+    override suspend fun getSignals(serverBaseUrl: String, identity: NodeIdentity): Result<List<String>> =
         withContext(ioDispatcher) {
             runCatching {
                 val nodeIdHex = identity.nodeId.toHex()
@@ -256,7 +248,7 @@ class RendezvousClient @Inject constructor(
      * [DrainUnauthorizedException] on 401 (re-check-in needed). Returns false on an
      * older server that lacks /wait (404) so the caller falls back to plain polling.
      */
-    suspend fun waitForWake(serverBaseUrl: String, identity: NodeIdentity): Result<Boolean> =
+    override suspend fun waitForWake(serverBaseUrl: String, identity: NodeIdentity): Result<Boolean> =
         withContext(ioDispatcher) {
             runCatching {
                 val nodeIdHex = identity.nodeId.toHex()
@@ -280,7 +272,7 @@ class RendezvousClient @Inject constructor(
      * land. Best-effort — the server stores nothing, it only completes the peer's
      * parked /wait. Failures are swallowed (peer may simply not be parked).
      */
-    suspend fun tap(serverBaseUrl: String, peerNodeIdHex: String): Result<Unit> =
+    override suspend fun tap(serverBaseUrl: String, peerNodeIdHex: String): Result<Unit> =
         withContext(ioDispatcher) {
             runCatching {
                 val request = Request.Builder()
@@ -300,7 +292,7 @@ class RendezvousClient @Inject constructor(
      * Until then, only the Ed25519 component is checked (classical fallback for the
      * brief window before the pair-ack arrives).
      */
-    fun verifyCandidates(
+    override fun verifyCandidates(
         nodeIdHex: String,
         ed25519Pub: ByteArray,
         dilithiumPub: ByteArray?,
@@ -315,29 +307,13 @@ class RendezvousClient @Inject constructor(
     }
 
     /**
-     * One peer's forward-secret prekeys, fetched from the rendezvous server: the
-     * signed prekey (always present) and one popped one-time prekey (null once the
-     * server's pool for that peer is exhausted — the handshake then runs SPK-only,
-     * still forward-secret). Signatures are verified by the caller against the peer's
-     * Ed25519 key read from the authentic in-person QR.
-     */
-    data class PrekeyBundle(
-        val spkId: String,
-        val spkPub: HybridPublicKey,
-        val spkSig: ByteArray,
-        val opkId: String?,
-        val opkPub: HybridPublicKey?,
-        val opkSig: ByteArray?
-    )
-
-    /**
      * Publish our signed prekey bundle so initiators can fetch it. Authenticated with
      * the same signed `X-Drain-*` headers as the signal drain, so only the key holder
      * behind [identity]'s nodeId can publish for it. Best-effort: failures (older
      * server without /prekeys → 404, network) are surfaced as a failed Result and
      * simply mean peers fall back to the legacy handshake.
      */
-    suspend fun publishPrekeys(
+    override suspend fun publishPrekeys(
         serverBaseUrl: String,
         identity: NodeIdentity,
         bundleJson: String
@@ -360,7 +336,7 @@ class RendezvousClient @Inject constructor(
      * one-time prekey per fetch. Returns null when the peer has published no bundle
      * (404) — the caller then runs the legacy identity-key-only handshake.
      */
-    suspend fun fetchPrekeyBundle(serverBaseUrl: String, nodeIdHex: String): Result<PrekeyBundle?> =
+    override suspend fun fetchPrekeyBundle(serverBaseUrl: String, nodeIdHex: String): Result<PrekeyBundle?> =
         withContext(ioDispatcher) {
             runCatching {
                 val request = Request.Builder().url("$serverBaseUrl/prekeys/$nodeIdHex").get().build()
@@ -384,9 +360,6 @@ class RendezvousClient @Inject constructor(
         }
 
     companion object {
-        /** Port the Phase 4 direct-TCP message listener will bind to. */
-        const val DEFAULT_LISTEN_PORT = 8765
-
         // ── TLS certificate pinning (production rendezvous server) ──
         /** TLS host to pin. Blank = pinning disabled (LAN/Server-Mode cleartext only). */
         const val PINNED_HOST = "api.auroramessenger.com"

@@ -10,7 +10,7 @@ import com.aura.db.ContactEntity
 import com.aura.db.ContactEraser
 import com.aura.db.PairState
 import com.aura.identity.IdentityStore
-import com.aura.network.RendezvousClient
+import com.aura.network.Rendezvous
 import com.aura.settings.AuroraSettings
 import org.json.JSONObject
 import javax.inject.Inject
@@ -27,7 +27,7 @@ class ScannerPairing @Inject constructor(
     private val ratchet: RatchetManager,
     private val contactDao: ContactDao,
     private val eraser: ContactEraser,
-    private val rendezvousClient: RendezvousClient,
+    private val rendezvousClient: Rendezvous,
     private val settings: AuroraSettings,
     private val events: PairingEvents
 ) {

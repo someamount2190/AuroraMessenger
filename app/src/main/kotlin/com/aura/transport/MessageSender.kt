@@ -9,7 +9,7 @@ import com.aura.db.MeshPeerDao
 import com.aura.db.MeshPeerEntity
 import com.aura.db.MessageDao
 import com.aura.identity.IdentityStore
-import com.aura.network.RendezvousClient
+import com.aura.network.Rendezvous
 import com.aura.settings.AuroraSettings
 import com.aura.transport.rtc.RtcTransport
 import com.aura.di.IoDispatcher
@@ -41,7 +41,7 @@ class MessageSender @Inject constructor(
     private val contactDao: ContactDao,
     private val messageDao: MessageDao,
     private val meshPeerDao: MeshPeerDao,
-    private val rendezvousClient: RendezvousClient,
+    private val rendezvousClient: Rendezvous,
     private val settings: AuroraSettings,
     private val rtcTransport: RtcTransport,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher

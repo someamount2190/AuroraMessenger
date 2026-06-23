@@ -3,7 +3,7 @@ package com.aura.pairing
 import android.util.Base64
 import com.aura.crypto.HybridSigner
 import com.aura.crypto.NodeIdentity
-import com.aura.network.RendezvousClient
+import com.aura.network.Rendezvous
 import com.aura.settings.AuroraSettings
 import org.json.JSONObject
 import javax.inject.Inject
@@ -19,7 +19,7 @@ import javax.inject.Inject
  */
 class PairingSignal @Inject constructor(
     private val signer: HybridSigner,
-    private val rendezvousClient: RendezvousClient,
+    private val rendezvousClient: Rendezvous,
     private val settings: AuroraSettings
 ) {
     /** Ed25519-sign a canonical signed-part string; null on failure. */

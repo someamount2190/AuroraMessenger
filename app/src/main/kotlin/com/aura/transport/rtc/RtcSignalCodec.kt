@@ -5,7 +5,7 @@ import com.aura.crypto.RatchetManager
 import com.aura.crypto.toHex
 import com.aura.db.ContactDao
 import com.aura.identity.IdentityStore
-import com.aura.network.RendezvousClient
+import com.aura.network.Rendezvous
 import com.aura.settings.AuroraSettings
 import org.json.JSONObject
 import javax.inject.Inject
@@ -26,7 +26,7 @@ class RtcSignalCodec @Inject constructor(
     private val identityManager: IdentityStore,
     private val contactDao: ContactDao,
     private val ratchet: RatchetManager,
-    private val rendezvousClient: RendezvousClient,
+    private val rendezvousClient: Rendezvous,
     private val settings: AuroraSettings
 ) {
     /** A decrypted inbound signal and who it came from. */

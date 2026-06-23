@@ -6,7 +6,7 @@ import com.aura.backup.Backups
 import com.aura.crypto.toHex
 import com.aura.db.AuroraDatabase
 import com.aura.identity.IdentityStore
-import com.aura.network.RendezvousClient
+import com.aura.network.Rendezvous
 import com.aura.security.AppLock
 import com.aura.security.RootDetector
 import com.aura.security.SecureWipe
@@ -25,7 +25,7 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     val settings: AuroraSettings,
     val serverController: RendezvousServerController,
-    private val rendezvousClient: RendezvousClient,
+    private val rendezvousClient: Rendezvous,
     private val identityManager: IdentityStore,
     private val database: AuroraDatabase,
     val appLockManager: AppLock,
