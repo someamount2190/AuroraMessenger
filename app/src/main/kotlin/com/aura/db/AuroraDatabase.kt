@@ -60,14 +60,20 @@ abstract class AuroraDatabase : RoomDatabase() {
         /**
          * v9→v10: retire the symmetric ratchet. Its `ratchet_state` (chains + SAS fingerprint +
          * media key) and `ratchet_skipped` tables are dropped; the single `KemDoubleRatchet`
-         * (`kem_ratchet`) now carries the SAS fingerprint and media key in its own blob. Pre-FIPS
-         * data is already reset by `StartupMigrations` on upgrade (clean break / re-pair), so this
-         * drop is lossless for any real user.
+         * (`kem_ratchet`) now carries the SAS fingerprint and media key in its own blob.
+         *
+         * The `kem_ratchet` blob format also changed incompatibly (it gained a versioned
+         * `[1B ver][8B sasFp][32B mediaKey]` header). A v8/v9 row holds the *old* bare
+         * `sessionToBytes` blob with no header and — crucially — no media key (that lived in the
+         * now-dropped `ratchet_state`), so it can't be salvaged. We **clear** `kem_ratchet` here so
+         * no stale unversioned blob ever reaches the new parser; those contacts re-pair (the same
+         * clean-break / re-pair contract `StartupMigrations` applies on the pre-FIPS upgrade).
          */
         val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("DROP TABLE IF EXISTS `ratchet_state`")
                 db.execSQL("DROP TABLE IF EXISTS `ratchet_skipped`")
+                db.execSQL("DELETE FROM `kem_ratchet`")
             }
         }
 

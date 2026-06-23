@@ -154,4 +154,22 @@ class KemRatchetManagerTest {
         assertNull(a.sasCodeFor("nobody", "x"))
         assertNull(a.mediaKey("nobody"))
     }
+
+    /**
+     * A legacy / malformed stored blob (e.g. a pre-header v9 session row that survived an upgrade)
+     * must fail CLOSED — read as not-seeded, every accessor null — never throw out of the manager.
+     */
+    @Test fun legacyOrMalformedBlob_failsClosed() = runBlocking {
+        val store = MemStore()
+        val a = KemRatchetManager(store, HybridKem(), Hkdf(), SymmetricCipher())
+        // Old format: bare sessionToBytes started with the 4-byte big-endian rootKey length
+        // (0x00 0x00 0x00 0x20…), so byte[0] != the new record version.
+        store.save(BOB, byteArrayOf(0x00, 0x00, 0x00, 0x20, 1, 2, 3, 4))
+
+        assertFalse(a.isSeeded(BOB))
+        assertNull(a.sealNext(BOB, "x".toByteArray(), aad))
+        assertNull(a.open(BOB, ByteArray(32), aad))
+        assertNull(a.mediaKey(BOB))
+        assertNull(a.sasCodeFor(BOB, "x"))
+    }
 }

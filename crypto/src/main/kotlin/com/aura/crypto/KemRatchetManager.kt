@@ -61,7 +61,9 @@ class KemRatchetManager(
         }
     }
 
-    suspend fun isSeeded(contactNodeIdHex: String): Boolean = store.load(contactNodeIdHex) != null
+    /** True once a usable (current-format) session exists for this contact. A malformed or
+     *  legacy-format blob reads as not-seeded so callers re-pair rather than crash. */
+    suspend fun isSeeded(contactNodeIdHex: String): Boolean = loadRecord(contactNodeIdHex) != null
 
     /**
      * Seal [plaintext] for [contactNodeIdHex], advancing (and persisting) the ratchet. Returns
@@ -126,8 +128,10 @@ class KemRatchetManager(
 
     private class Record(val sasFp: ByteArray, val mediaKey: ByteArray, val session: KemDoubleRatchet.Session)
 
+    // Fail closed: a malformed or legacy (pre-header) blob parses to null rather than throwing,
+    // so a stale row degrades to "re-pair this contact" instead of crashing the caller.
     private suspend fun loadRecord(contactNodeIdHex: String): Record? =
-        store.load(contactNodeIdHex)?.let { unpack(it) }
+        store.load(contactNodeIdHex)?.let { runCatching { unpack(it) }.getOrNull() }
 
     private fun pack(sasFp: ByteArray, mediaKey: ByteArray, session: KemDoubleRatchet.Session): ByteArray {
         require(sasFp.size == SAS_FP_BYTES && mediaKey.size == SymmetricCipher.KEY_BYTES)
