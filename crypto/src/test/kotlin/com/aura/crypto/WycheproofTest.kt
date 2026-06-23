@@ -2,8 +2,12 @@ package com.aura.crypto
 
 import kotlinx.coroutines.runBlocking
 import org.bouncycastle.crypto.agreement.X25519Agreement
+import org.bouncycastle.crypto.params.ParametersWithContext
 import org.bouncycastle.crypto.params.X25519PrivateKeyParameters
 import org.bouncycastle.crypto.params.X25519PublicKeyParameters
+import org.bouncycastle.pqc.crypto.mldsa.MLDSAParameters
+import org.bouncycastle.pqc.crypto.mldsa.MLDSAPublicKeyParameters
+import org.bouncycastle.pqc.crypto.mldsa.MLDSASigner
 import org.bouncycastle.pqc.crypto.mlkem.MLKEMExtractor
 import org.bouncycastle.pqc.crypto.mlkem.MLKEMKeyGenerationParameters
 import org.bouncycastle.pqc.crypto.mlkem.MLKEMKeyPairGenerator
@@ -22,9 +26,15 @@ import kotlin.test.fail
  * ML-KEM implicit-rejection ("Strcmp") bug — complementing the happy-path KATs.
  *
  * Coverage maps to Aurora's stack: X25519 (X-Wing's classical half), Ed25519 (Aurora's signing
- * path), XChaCha20-Poly1305 (Tink AEAD), ML-KEM-768 (X-Wing's PQ half). All pure-JVM.
+ * path), XChaCha20-Poly1305 (Tink AEAD), ML-KEM-768 (X-Wing's PQ half), and ML-DSA-65 (Aurora's
+ * PQ signing half — verify direction, the side a peer/server relies on). All pure-JVM.
  */
 class WycheproofTest {
+
+    private companion object {
+        const val MLDSA65_PK_BYTES = 1952   // FIPS 204 ML-DSA-65 public key
+        const val MLDSA65_SIG_BYTES = 3309  // FIPS 204 ML-DSA-65 signature
+    }
 
     @Test fun x25519_xdh() {
         var checked = 0; var skippedThrow = 0
@@ -118,6 +128,42 @@ class WycheproofTest {
             checked++
         }
         assertTrue(checked > 50, "expected many ML-KEM-768 decap vectors; got $checked")
+    }
+
+    @Test fun mldsa65_verify() {
+        var valid = 0; var invalid = 0
+        forEachGroup("mldsa_65_verify_test.json") { g ->
+            val pkHex = g.getString("publicKey")
+            forEachTestIn(g) { t ->
+                val msg = hexToBytes(t.getString("msg"))
+                val sig = hexToBytes(t.getString("sig"))
+                val ctx = hexToBytes(t.optString("ctx", ""))
+                val result = t.getString("result")
+                // Same BC ML-DSA-65 verifier HybridSigner wraps. Empty-context vectors take
+                // HybridSigner's exact init path (`init(false, pub)`); context-bound vectors add
+                // ParametersWithContext. A malformed key/signature/context throws ⇒ rejected.
+                val ok = try {
+                    val pkBytes = hexToBytes(pkHex)
+                    // FIPS-204 ML-DSA-65 fixed sizes. BC's lightweight API is lenient about a
+                    // wrong-length public key / signature (Wycheproof's IncorrectPublicKeyLength /
+                    // IncorrectSignatureLength groups); a correct verifier rejects them outright.
+                    require(pkBytes.size == MLDSA65_PK_BYTES && sig.size == MLDSA65_SIG_BYTES)
+                    val pub = MLDSAPublicKeyParameters(MLDSAParameters.ml_dsa_65, pkBytes)
+                    val verifier = MLDSASigner()
+                    if (ctx.isEmpty()) verifier.init(false, pub)
+                    else verifier.init(false, ParametersWithContext(pub, ctx))
+                    verifier.update(msg, 0, msg.size)
+                    verifier.verifySignature(sig)
+                } catch (_: Exception) {
+                    false
+                }
+                when (result) {
+                    "valid", "acceptable" -> { if (!ok) fail("tc${t.getInt("tcId")} ($result): valid ML-DSA-65 sig rejected"); valid++ }
+                    "invalid" -> { if (ok) fail("tc${t.getInt("tcId")}: invalid ML-DSA-65 sig ACCEPTED"); invalid++ }
+                }
+            }
+        }
+        assertTrue(valid > 0 && invalid > 0, "expected both valid+invalid ML-DSA-65 vectors (got $valid/$invalid)")
     }
 
     // ── JSON helpers ───────────────────────────────────────────────────────────

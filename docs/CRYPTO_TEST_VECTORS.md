@@ -74,8 +74,10 @@ files under `src/test/resources/wycheproof/`: **x25519** (518 XDH edge cases —
 classical half), **ed25519** (valid + invalid verify incl. malleability — Aurora's signing
 path), **xchacha20_poly1305** (24-byte-nonce AEAD groups via `SymmetricCipher`/Tink), and
 **mlkem_768** (decapsulation incl. the implicit-rejection "Strcmp" bug, via keygen-from-seed →
-decaps == K). The independent-authority complement to the deterministic regression KATs in
-`PqcKatTest`.
+decaps == K), and **mldsa_65 verify** (the full 210-vector ML-DSA-65 verify corpus — 79 valid /
+131 invalid — through the same BC verifier `HybridSigner` wraps, covering context binding,
+modified signatures, zero/incorrect-length public keys, and signature-length rejection). The
+independent-authority complement to the deterministic regression KATs in `PqcKatTest`.
 
 ## Recommended test plan (by tier)
 
