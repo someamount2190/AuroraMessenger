@@ -1,9 +1,18 @@
 # Crypto Re-Engineering — Locked Migration Plan
 
-> Status: **LOCKED** (decisions approved). This is the plan of record for replacing every
-> hand-rolled cryptographic construction in Aurora with vetted library implementations and
-> moving the post-quantum parameters to the FIPS-final standards. No implementation has
-> started; this document is the contract that Phase 1 codes against.
+> Status: **LOCKED & IN PROGRESS.** Plan of record for replacing every hand-rolled
+> cryptographic construction in Aurora with vetted library implementations and moving the
+> post-quantum parameters to the FIPS-final standards.
+>
+> **Done (committed, all tests green):** Phase 0 (deps → BC 1.84 + Tink; liboqs removed),
+> Phase 1 (`Hkdf` → BC HKDF-SHA-256 + RFC 5869 KATs), Phase 2 (`SymmetricCipher` → Tink
+> XChaCha20-Poly1305), Phase 3 (`HybridSigner` → BC ML-DSA-65 + Ed25519), Phase 4a
+> (`HybridKem` → X-Wing ML-KEM-768; prekeys/identity/backup/pairing on single-blob KEM
+> keys; **liboqs + native `.so` fully removed** → whole PQC stack now pure-JVM on CI).
+>
+> **Remaining:** Phase 4b (drop the legacy no-FS handshake fallback — a pairing policy
+> change), Phase 5 (post-quantum asymmetric ratchet — severable, review-gated; see §6), and
+> the test-vector doc refresh (§7).
 
 Companion reading: [`CRYPTO_SPEC.md`](CRYPTO_SPEC.md) (current design),
 [`CRYPTO_TEST_VECTORS.md`](CRYPTO_TEST_VECTORS.md) (validation sources — updated by this plan),
