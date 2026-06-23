@@ -151,18 +151,18 @@ private fun AuroraAppContent(viewModel: AuroraAppViewModel) {
     LaunchedEffect(Unit) {
         viewModel.pairingManager.events.collect { ev ->
             val msg = when (ev) {
-                is com.aura.pairing.PairingCoordinator.PairEvent.Success  -> "Contact added"
-                is com.aura.pairing.PairingCoordinator.PairEvent.Accepted -> "Accepted — verify the codes to start chatting"
-                is com.aura.pairing.PairingCoordinator.PairEvent.Declined -> "Your request was declined"
-                is com.aura.pairing.PairingCoordinator.PairEvent.Failed   -> "Verification failed — contact removed"
-                is com.aura.pairing.PairingCoordinator.PairEvent.ContactRemoved -> "${ev.name} removed you as a contact"
-                is com.aura.pairing.PairingCoordinator.PairEvent.WeakPairing -> "Paired, but without forward secrecy — the contact's keys were unavailable"
-                is com.aura.pairing.PairingCoordinator.PairEvent.IncomingRequest -> "Someone wants to connect"
+                is com.aura.pairing.PairEvent.Success  -> "Contact added"
+                is com.aura.pairing.PairEvent.Accepted -> "Accepted — verify the codes to start chatting"
+                is com.aura.pairing.PairEvent.Declined -> "Your request was declined"
+                is com.aura.pairing.PairEvent.Failed   -> "Verification failed — contact removed"
+                is com.aura.pairing.PairEvent.ContactRemoved -> "${ev.name} removed you as a contact"
+                is com.aura.pairing.PairEvent.WeakPairing -> "Paired, but without forward secrecy — the contact's keys were unavailable"
+                is com.aura.pairing.PairEvent.IncomingRequest -> "Someone wants to connect"
             }
             android.widget.Toast.makeText(appContext, msg, android.widget.Toast.LENGTH_SHORT).show()
             // A request arrived while the host may be sitting on the "Show my code" /
             // add-contact screen — pull them back to home where the Accept/Reject card is.
-            if (ev is com.aura.pairing.PairingCoordinator.PairEvent.IncomingRequest) {
+            if (ev is com.aura.pairing.PairEvent.IncomingRequest) {
                 val route = navController.currentDestination?.route
                 if (route != null && (route.startsWith("mycode") || route == Routes.SCAN)) {
                     if (!navController.popBackStack(Routes.HOME, false)) navController.navigate(Routes.HOME)
