@@ -1,27 +1,33 @@
 package com.aura.crypto
 
-import com.aura.crypto.testutil.NativeCrypto
 import kotlinx.coroutines.test.runTest
-import org.junit.Assume.assumeTrue
-import org.junit.Before
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** T2 (native liboqs — Dilithium). Skips when the native lib is unavailable. */
+/** Pure-JVM now: ML-DSA-65 + Ed25519 are both BouncyCastle, no liboqs needed. */
 class HybridSignerTest {
 
     private val signer = HybridSigner()
     private val msg = "authenticate me".toByteArray()
-
-    @Before fun requireNative() = assumeTrue("liboqs native unavailable", NativeCrypto.available)
 
     @Test fun sign_thenVerify_passes() = runTest {
         val kp = signer.generateSigningKeyPair().getOrThrow()
         val sig = signer.sign(msg, kp.privateKey).getOrThrow()
         assertTrue(signer.verify(msg, sig, kp.publicKey).getOrThrow())
         assertTrue(signer.verifyHybridSync(msg, sig, kp.publicKey))
+    }
+
+    /**
+     * FIPS-204 ML-DSA-65 signature is **3309 bytes** (vs round-3 Dilithium-3's 3293) — the
+     * decisive proof we are on the FIPS-final scheme. Hybrid = 4 + 3309 + 64 = 3377.
+     */
+    @Test fun mldsa65_signatureSize_isFips204() = runTest {
+        val kp = signer.generateSigningKeyPair().getOrThrow()
+        val sig = signer.sign(msg, kp.privateKey).getOrThrow()
+        assertEquals(4 + 3309 + HybridSigner.ED25519_SIG_BYTES, sig.size)
+        assertEquals(3309, HybridSigner.MLDSA65_SIG_BYTES)
     }
 
     @Test fun wrongMessage_fails() = runTest {

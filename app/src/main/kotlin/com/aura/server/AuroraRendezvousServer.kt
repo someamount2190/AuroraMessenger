@@ -345,8 +345,8 @@ class AuroraRendezvousServer(
         const val CANDIDATE_COUNT = 10
         /** Cap on one-time prekeys retained per node (bounds memory). */
         const val PREKEY_OPK_MAX = 100
-        // Hybrid check-in signature size: [4B len][Dilithium-3 sig 3293][Ed25519 sig 64].
-        private const val HYBRID_SIG_BYTES = 4 + 3293 + 64
+        // Hybrid check-in signature size: [4B len][ML-DSA-65 sig 3309][Ed25519 sig 64].
+        private const val HYBRID_SIG_BYTES = 4 + 3309 + 64
         private const val MAX_BODY_BYTES = 64 * 1024
         private const val MAX_SIGNAL_BYTES = 32 * 1024
 

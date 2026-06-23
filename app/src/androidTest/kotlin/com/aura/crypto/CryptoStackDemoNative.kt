@@ -59,9 +59,9 @@ class CryptoStackDemoNative {
         val sig = signer.sign(msg, kp.privateKey).getOrThrow()
         val ok = signer.verify(msg, sig, kp.publicKey).getOrThrow()
         val tamperedOk = signer.verifyHybridSync("different".toByteArray(), sig, kp.publicKey)
-        show("── 5) Hybrid signature (Dilithium-3 + Ed25519) ──")
+        show("── 5) Hybrid signature (ML-DSA-65 + Ed25519) ──")
         show("   message     : \"${String(msg)}\"")
-        show("   signature   : ${sig.size}B (4 + 3293 Dilithium + 64 Ed25519)")
+        show("   signature   : ${sig.size}B (4 + 3309 ML-DSA-65 + 64 Ed25519)")
         show("   verify(good): $ok    verify(tampered msg): $tamperedOk")
         assertTrue(ok); assertTrue(!tamperedOk)
     }
