@@ -191,6 +191,9 @@ class TcpMessageServer @Inject constructor(
 
         // Route sealed control messages by their inner "ctl" type.
         when (inner.optString("ctl")) {
+            // Auto-bootstrap: opening the frame above already advanced our receive ratchet, so
+            // the responder can now send too. Nothing else to do — just ack.
+            "bootstrap" -> { /* no-op */ }
             "react" -> reactionHandler?.invoke(from, inner)
             else    -> controlHandler?.invoke(from, inner)
         }

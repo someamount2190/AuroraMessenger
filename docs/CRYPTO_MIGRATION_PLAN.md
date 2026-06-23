@@ -13,13 +13,14 @@
 > **Also done:** Phase 4b (legacy no-FS fallback removed — pairing now fails closed without a
 > verified PQXDH bundle) and the test-vector / audit-scope doc refresh (§7).
 >
-> **Phase 5 (post-quantum asymmetric ratchet):** the X-Wing KEM Double Ratchet is now
-> **implemented as a proven, self-contained reference unit** (`KemDoubleRatchet` +
-> `KemDoubleRatchetTest`, incl. the post-compromise-security "healing" test) per
-> [`PQ_RATCHET_DESIGN.md`](PQ_RATCHET_DESIGN.md) (§6 here). It is **not yet wired into the
-> transport** and remains **review-gated** before Aurora relies on it; the shipping ratchet
-> stays the symmetric `RatchetManager`. Remaining: dedicated review, then transport/persistence
-> integration.
+> **Phase 5 (post-quantum asymmetric ratchet): WIRED IN.** The X-Wing KEM Double Ratchet is
+> the live message ratchet — `KemDoubleRatchet` + `KemRatchetCodec` + store-backed
+> `KemRatchetManager` drive `MessageSender`/`TcpMessageServer`/`MediaTransfer`, persisted to the
+> `kem_ratchet` table (DB v9); pairing seeds initiator/responder and the initiator
+> auto-bootstraps on pairing completion. `RatchetManager` now serves only SAS + media-at-rest.
+> So Aurora's messages now have **post-compromise security (healing)** on the wire. It remains
+> **bespoke protocol crypto** that should get dedicated review before production reliance
+> (see [`PQ_RATCHET_DESIGN.md`](PQ_RATCHET_DESIGN.md)).
 
 Companion reading: [`CRYPTO_SPEC.md`](CRYPTO_SPEC.md) (current design),
 [`CRYPTO_TEST_VECTORS.md`](CRYPTO_TEST_VECTORS.md) (validation sources — updated by this plan),

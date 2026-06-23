@@ -1,17 +1,14 @@
 # Phase 5 — Post-Quantum Asymmetric Ratchet (Design Spec, FOR REVIEW)
 
-> Status: **REFERENCE IMPLEMENTATION DONE & PROVEN — NOT YET WIRED IN; PENDING REVIEW.**
-> The construction below is implemented as a self-contained, pure-JVM unit
-> ([`KemDoubleRatchet.kt`](../crypto/src/main/kotlin/com/aura/crypto/KemDoubleRatchet.kt)) and
-> proven by [`KemDoubleRatchetTest`](../crypto/src/test/kotlin/com/aura/crypto/KemDoubleRatchetTest.kt)
-> (8 tests: round-trips across many steps, out-of-order/skipped, tamper + replay rejection,
-> and the **post-compromise-security "healing"** test). It is **bespoke protocol crypto** and
-> must not be self-certified: it is gated on dedicated review (ideally external) before Aurora
-> relies on it, and it is **not yet wired into the transport** — the shipping ratchet remains
-> the symmetric [`RatchetManager`](../crypto/src/main/kotlin/com/aura/crypto/RatchetManager.kt).
-> Phase 5 is **severable** — Phases 0–4b already ship a fully library-based, FIPS-PQC, pure-JVM
-> app; this adds post-compromise security on top. Remaining work: integrate into the transport
-> frame format + persistence, and complete review.
+> Status: **IMPLEMENTED & WIRED INTO THE TRANSPORT (review-gated).** The KEM Double Ratchet
+> is the live message ratchet: `KemDoubleRatchet` + `KemRatchetCodec` + the store-backed
+> `KemRatchetManager` drive `MessageSender`/`TcpMessageServer`/`MediaTransfer`, persisted to the
+> `kem_ratchet` Room table; pairing seeds it (initiator/responder) and the initiator
+> **auto-bootstraps** on pairing completion (a sealed no-op control frame) so either side can
+> send first. The symmetric `RatchetManager` now serves only the SAS code + media-at-rest key.
+> Proven by `KemDoubleRatchetTest` (incl. healing), `KemRatchetCodecTest`, `KemRatchetManagerTest`,
+> and the end-to-end `EndToEndPairMessageSimTest`. It remains **bespoke protocol crypto** that
+> should get dedicated review before being depended on in production.
 >
 > **KEM-DR delivery property (surfaced in implementation):** unlike DH-DR — where every header
 > carries the ratchet public key so any message of a new epoch can trigger the step — a KEM

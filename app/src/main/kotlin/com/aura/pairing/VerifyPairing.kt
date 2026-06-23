@@ -7,6 +7,7 @@ import com.aura.db.ContactEraser
 import com.aura.db.PairState
 import com.aura.identity.IdentityStore
 import com.aura.settings.AuroraSettings
+import com.aura.transport.MessageSender
 import org.json.JSONObject
 import javax.inject.Inject
 
@@ -22,8 +23,16 @@ class VerifyPairing @Inject constructor(
     private val contactDao: ContactDao,
     private val eraser: ContactEraser,
     private val settings: AuroraSettings,
-    private val events: PairingEvents
+    private val events: PairingEvents,
+    private val messageSender: MessageSender
 ) {
+    /** Initiator auto-bootstrap: once paired+verified, the initiator sends a sealed no-op
+     *  control frame so the responder's KEM receive ratchet is live and either side can text
+     *  first. Best-effort; the initiator's first real message bootstraps otherwise. */
+    private suspend fun bootstrapIfInitiator(contactNodeIdHex: String) {
+        val c = contactDao.byNodeId(contactNodeIdHex) ?: return
+        if (c.isInitiator) runCatching { messageSender.sendBootstrap(c) }
+    }
     /** The 6-digit code THIS device shows on the verify screen (its own SAS code). */
     suspend fun myVerifyCode(contactNodeIdHex: String): String? {
         val myNodeIdHex = identityManager.getOrCreate().nodeId.toHex()
@@ -57,6 +66,7 @@ class VerifyPairing @Inject constructor(
         if (contact.theyVerified) {
             contactDao.setVerify(contactNodeIdHex, iv = true, tv = true, state = PairState.ACTIVE)
             events.activated(contactNodeIdHex)
+            bootstrapIfInitiator(contactNodeIdHex)
         } else {
             contactDao.setVerify(contactNodeIdHex, iv = true, tv = false, state = PairState.VERIFY)
         }
@@ -77,6 +87,7 @@ class VerifyPairing @Inject constructor(
         if (contact.iVerified) {
             contactDao.setVerify(from, iv = true, tv = true, state = PairState.ACTIVE)
             events.activated(from)
+            bootstrapIfInitiator(from)
         } else {
             contactDao.setVerify(from, iv = false, tv = true, state = PairState.VERIFY)
         }

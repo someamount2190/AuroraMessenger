@@ -170,6 +170,15 @@ class MessageSender @Inject constructor(
         }
     }
 
+    /**
+     * Initiator-side auto-bootstrap on pairing completion: send one sealed no-op control frame
+     * so the responder's KEM receive ratchet is established and EITHER side can then send first.
+     * Best-effort — if the peer is briefly unreachable, the initiator's first real message
+     * bootstraps the responder instead.
+     */
+    suspend fun sendBootstrap(contact: ContactEntity): Boolean =
+        sendControl(contact, JSONObject().put("ctl", "bootstrap"))
+
     /** Send a sealed control frame (Phase 6 timer sync). Returns true if acked. */
     suspend fun sendControl(contact: ContactEntity, payload: JSONObject): Boolean {
         val identity = identityManager.getOrCreate()
