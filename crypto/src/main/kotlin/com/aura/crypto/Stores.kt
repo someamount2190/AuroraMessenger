@@ -30,6 +30,20 @@ data class SkippedKey(
     val messageKeyB64: String
 )
 
+/**
+ * Persistence for the post-quantum KEM Double Ratchet ([KemRatchetManager]). The whole
+ * serialized [KemDoubleRatchet.Session] (root, chains, ratchet keypair, peer key, skipped
+ * cache) is stored as one opaque blob per contact — the host backs this with an
+ * SQLCipher-encrypted row. Replaces the symmetric [RatchetStore]'s field/skipped model when
+ * the KEM ratchet is wired into the transport.
+ */
+interface KemSessionStore {
+    suspend fun load(contactNodeIdHex: String): ByteArray?
+    suspend fun save(contactNodeIdHex: String, session: ByteArray)
+    suspend fun delete(contactNodeIdHex: String)
+    suspend fun deleteAll()
+}
+
 interface RatchetStore {
     suspend fun upsertState(state: RatchetState)
     suspend fun state(nodeIdHex: String): RatchetState?

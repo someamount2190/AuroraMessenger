@@ -49,6 +49,48 @@ class HybridKem(
             }
         }
 
+    /**
+     * **Bootstrap-only:** derive an X-Wing keypair *deterministically* from [seed]. The KEM
+     * Double Ratchet seeds the responder's initial ratchet key from the shared pairing root via
+     * this, so both peers derive the same bootstrap key (the initiator gets the public half, the
+     * responder the private half). NOT for long-term identity keys — the very first ratchet step
+     * provides no post-compromise security (PCS heals on the next, fresh, random step).
+     */
+    suspend fun deterministicKeyPair(seed: ByteArray): CryptoResult<HybridFullKeyPair> =
+        withContext(ioDispatcher) {
+            cryptoRunCatching {
+                val gen = XWingKeyPairGenerator()
+                gen.init(XWingKeyGenerationParameters(StreamRng(seed)))
+                val kp = gen.generateKeyPair()
+                HybridFullKeyPair(
+                    publicKey  = HybridPublicKey((kp.public  as XWingPublicKeyParameters).encoded),
+                    privateKey = HybridPrivateKey((kp.private as XWingPrivateKeyParameters).encoded)
+                )
+            }
+        }
+
+    /** Reproducible, inexhaustible byte stream (SHA-256 counter over [seed]) for deterministic
+     *  keygen. Same seed ⇒ same stream ⇒ same keypair on both peers. */
+    private class StreamRng(seed: ByteArray) : SecureRandom() {
+        private val seed = seed.copyOf()
+        private var counter = 0L
+        private var buf = ByteArray(0)
+        private var off = 0
+        override fun nextBytes(bytes: ByteArray) {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            var i = 0
+            while (i < bytes.size) {
+                if (off >= buf.size) {
+                    md.reset(); md.update(seed)
+                    md.update(ByteArray(8) { ((counter ushr (56 - it * 8)) and 0xff).toByte() })
+                    counter++; buf = md.digest(); off = 0
+                }
+                bytes[i++] = buf[off++]
+            }
+        }
+        override fun generateSeed(numBytes: Int): ByteArray = ByteArray(numBytes).also { nextBytes(it) }
+    }
+
     suspend fun encapsulate(recipientPublicKey: HybridPublicKey): CryptoResult<HybridKemResult> =
         withContext(ioDispatcher) {
             cryptoRunCatching {
