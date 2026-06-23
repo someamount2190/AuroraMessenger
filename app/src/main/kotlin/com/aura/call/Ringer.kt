@@ -11,7 +11,6 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Plays the system ringtone (looping) and vibrates while an incoming call rings,
@@ -20,7 +19,6 @@ import javax.inject.Singleton
  * declined, connected, or torn down. Owns call audio so the call notification
  * channel itself stays silent (no double sound).
  */
-@Singleton
 class Ringer @Inject constructor(
     @ApplicationContext private val context: Context
 ) {

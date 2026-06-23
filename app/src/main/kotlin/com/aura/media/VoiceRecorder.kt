@@ -7,14 +7,12 @@ import android.os.SystemClock
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Records short voice messages to AAC/MP4. The raw recording lands in cache and
  * is read out by the caller (which encrypts it before it ever leaves the app);
  * the cache file is deleted right after.
  */
-@Singleton
 class VoiceRecorder @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
