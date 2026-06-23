@@ -77,6 +77,23 @@ class RendezvousClient @Inject constructor(
         return builder
     }
 
+    /**
+     * Sign a fresh timestamp and attach the `X-Drain-*` headers that prove we own
+     * [identity]'s nodeId. Shared by every authenticated GET/POST against our own
+     * queue/channel (signal drain, /wait long-poll, prekey publish) so the signing
+     * and header layout live in exactly one place.
+     */
+    private fun Request.Builder.signedDrainAuth(identity: NodeIdentity): Request.Builder {
+        val ts = System.currentTimeMillis()
+        val sig = signer.signEd25519Only(
+            AuroraRendezvousServer.drainMessage(identity.nodeId.toHex(), ts),
+            identity.privatePart.signingPrivateKey
+        ).getOrThrow()
+        return addHeader("X-Drain-Ts", ts.toString())
+            .addHeader("X-Drain-Pub", Base64.encodeToString(identity.publicPart.signingPublicKey.ed25519PublicKey, Base64.NO_WRAP))
+            .addHeader("X-Drain-Sig", Base64.encodeToString(sig, Base64.NO_WRAP))
+    }
+
     data class FindCandidate(
         val ip: String,
         val port: Int,
@@ -214,20 +231,11 @@ class RendezvousClient @Inject constructor(
         withContext(ioDispatcher) {
             runCatching {
                 val nodeIdHex = identity.nodeId.toHex()
-                val ts = System.currentTimeMillis()
-                val sig = signer.signEd25519Only(
-                    AuroraRendezvousServer.drainMessage(nodeIdHex, ts),
-                    identity.privatePart.signingPrivateKey
-                ).getOrThrow()
-                val pubB64 = Base64.encodeToString(identity.publicPart.signingPublicKey.ed25519PublicKey, Base64.NO_WRAP)
-                val sigB64 = Base64.encodeToString(sig, Base64.NO_WRAP)
                 // Carried as headers (not query) so an older server that ignores them
                 // still sees a clean /signal/{nodeId} path and drains normally.
                 val request = Request.Builder()
                     .url("$serverBaseUrl/signal/$nodeIdHex")
-                    .addHeader("X-Drain-Ts", ts.toString())
-                    .addHeader("X-Drain-Pub", pubB64)
-                    .addHeader("X-Drain-Sig", sigB64)
+                    .signedDrainAuth(identity)
                     .get()
                     .build()
                 http.newCall(request).execute().use { resp ->
@@ -252,18 +260,9 @@ class RendezvousClient @Inject constructor(
         withContext(ioDispatcher) {
             runCatching {
                 val nodeIdHex = identity.nodeId.toHex()
-                val ts = System.currentTimeMillis()
-                val sig = signer.signEd25519Only(
-                    AuroraRendezvousServer.drainMessage(nodeIdHex, ts),
-                    identity.privatePart.signingPrivateKey
-                ).getOrThrow()
-                val pubB64 = Base64.encodeToString(identity.publicPart.signingPublicKey.ed25519PublicKey, Base64.NO_WRAP)
-                val sigB64 = Base64.encodeToString(sig, Base64.NO_WRAP)
                 val request = Request.Builder()
                     .url("$serverBaseUrl/wait/$nodeIdHex")
-                    .addHeader("X-Drain-Ts", ts.toString())
-                    .addHeader("X-Drain-Pub", pubB64)
-                    .addHeader("X-Drain-Sig", sigB64)
+                    .signedDrainAuth(identity)
                     .get()
                     .build()
                 waitHttp.newCall(request).execute().use { resp ->
@@ -345,17 +344,9 @@ class RendezvousClient @Inject constructor(
     ): Result<Unit> = withContext(ioDispatcher) {
         runCatching {
             val nodeIdHex = identity.nodeId.toHex()
-            val ts = System.currentTimeMillis()
-            val sig = signer.signEd25519Only(
-                AuroraRendezvousServer.drainMessage(nodeIdHex, ts),
-                identity.privatePart.signingPrivateKey
-            ).getOrThrow()
-            val pubB64 = Base64.encodeToString(identity.publicPart.signingPublicKey.ed25519PublicKey, Base64.NO_WRAP)
             val request = Request.Builder()
                 .url("$serverBaseUrl/prekeys/$nodeIdHex")
-                .addHeader("X-Drain-Ts", ts.toString())
-                .addHeader("X-Drain-Pub", pubB64)
-                .addHeader("X-Drain-Sig", Base64.encodeToString(sig, Base64.NO_WRAP))
+                .signedDrainAuth(identity)
                 .post(bundleJson.toRequestBody("application/json".toMediaType()))
                 .build()
             http.newCall(request).execute().use { resp ->
