@@ -10,12 +10,18 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.security.SecureRandom
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentLinkedQueue
 import android.util.Base64
 
 /**
  * Phase 0: mini rendezvous server running inside the app (NanoHTTPD).
+ *
+ * This class is the **HTTP boundary**: routing ([serve]), request parsing, signature
+ * verification, candidate padding, and response building. The in-memory state is
+ * partitioned into focused collaborators:
+ *   - [NodeRegistry]    — nodeId→address map + check-in rate clock
+ *   - [SignalQueues]    — per-node encrypted signaling payload queues
+ *   - [PrekeyDirectory] — published forward-secret prekey bundles
+ *   - [IpRateLimiter]   — per-IP sliding-window limits for `/find` and `/signal` POST
  *
  * Endpoints:
  *   POST /checkin          — verifies signature, stores nodeId→IP, 15-minute TTL
@@ -34,37 +40,15 @@ class AuroraRendezvousServer(
     private val signer: HybridSigner = HybridSigner()
 ) : NanoHTTPD(port) {
 
-    data class RegisteredNode(
-        val nodeIdHex:    String,
-        val ip:           String,
-        val port:         Int,
-        val timestampMs:  Long,
-        val ed25519PubB64: String,
-        val signatureB64: String,
-        val storedAtMs:   Long
-    )
-
-    /** A published prekey bundle: the signed-prekey JSON + a queue of one-time-prekey JSONs. */
-    private class PrekeyStore(
-        val spkJson: String,
-        val opks: ConcurrentLinkedQueue<String>,
-        @Volatile var storedAtMs: Long
-    )
-
-    private val nodes   = ConcurrentHashMap<String, RegisteredNode>()
-    private val signals = ConcurrentHashMap<String, ConcurrentLinkedQueue<String>>()
-    private val prekeys = ConcurrentHashMap<String, PrekeyStore>()
-    private val rng     = SecureRandom()
-
-    // Phase 3 rate limiting: 1 checkin per nodeId per minute, 10 lookups per IP per minute.
-    private val lastCheckinByNode = ConcurrentHashMap<String, Long>()
-    private val findTimestampsByIp = ConcurrentHashMap<String, MutableList<Long>>()
-    // Signal-queue hardening: last activity per queue (for expiry) + per-IP POST limit.
-    private val signalActivityAt = ConcurrentHashMap<String, Long>()
-    private val signalPostTimestampsByIp = ConcurrentHashMap<String, MutableList<Long>>()
+    private val registry = NodeRegistry()
+    private val signalQueues = SignalQueues(MAX_QUEUE_LEN)
+    private val prekeyDir = PrekeyDirectory(PREKEY_OPK_MAX)
+    private val findLimiter = IpRateLimiter(FIND_RATE_LIMIT_PER_MIN)
+    private val signalPostLimiter = IpRateLimiter(SIGNAL_POST_RATE_LIMIT_PER_MIN)
+    private val rng = SecureRandom()
 
     val registeredNodeCount: Int
-        get() { purgeExpired(); return nodes.size }
+        get() { purgeExpired(); return registry.count() }
 
     // ── Routing ───────────────────────────────────────────────────────────
 
@@ -77,7 +61,7 @@ class AuroraRendezvousServer(
                     handleCheckin(session)
 
                 session.method == Method.GET && uri.startsWith("/find/") -> {
-                    if (!allowFind(session.remoteIpAddress ?: "?"))
+                    if (!findLimiter.allow(session.remoteIpAddress ?: "?"))
                         jsonError(Response.Status.TOO_MANY_REQUESTS, "rate limited")
                     else handleFind(uri.removePrefix("/find/"))
                 }
@@ -151,8 +135,7 @@ class AuroraRendezvousServer(
 
         // Rate limit: one check-in per nodeId per minute (refreshes are free of charge
         // for an attacker otherwise — they could churn the node table).
-        val lastCheckin = lastCheckinByNode[nodeIdHex] ?: 0L
-        if (now - lastCheckin < CHECKIN_RATE_LIMIT_MS)
+        if (registry.checkinRateLimited(nodeIdHex, now, CHECKIN_RATE_LIMIT_MS))
             return jsonError(Response.Status.TOO_MANY_REQUESTS, "rate limited")
 
         val message = checkinMessage(nodeIdHex, ip, port, timestamp)
@@ -167,9 +150,9 @@ class AuroraRendezvousServer(
         }
         if (!sigOk)
             return jsonError(Response.Status.UNAUTHORIZED, "signature verification failed")
-        lastCheckinByNode[nodeIdHex] = now
+        registry.markCheckin(nodeIdHex, now)
 
-        nodes[nodeIdHex] = RegisteredNode(
+        registry.put(RegisteredNode(
             nodeIdHex     = nodeIdHex,
             ip            = ip,
             port          = port,
@@ -177,7 +160,7 @@ class AuroraRendezvousServer(
             ed25519PubB64 = pubB64,
             signatureB64  = sigB64,
             storedAtMs    = now
-        )
+        ))
 
         return jsonResponse(
             Response.Status.OK,
@@ -189,13 +172,12 @@ class AuroraRendezvousServer(
     //
     // Returns 10 candidates. The real record carries the node's own checkin
     // signature; the requester re-derives "aura-checkin-v1|nodeId|ip|port|timestamp"
-    // and verifies it against the paired public key. Padding entries are other
-    // real nodes' records (with THEIR signatures, which won't verify for this
-    // nodeId) plus dummies — an observer cannot tell which IP is real. The
-    // padding doubles as future mesh bootstrap peers (meshPeerTable).
+    // and verifies it against the paired public key. Padding entries are dummies
+    // (with random signatures, which won't verify for this nodeId) — an observer
+    // cannot tell which IP is real. The padding doubles as future mesh bootstrap peers.
 
     private fun handleFind(nodeIdHex: String): Response {
-        val target = nodes[nodeIdHex]
+        val target = registry.get(nodeIdHex)
             ?: return jsonError(Response.Status.NOT_FOUND, "node not registered")
 
         val candidates = mutableListOf<JSONObject>()
@@ -226,14 +208,11 @@ class AuroraRendezvousServer(
 
     private fun handleSignalPost(nodeIdHex: String, session: IHTTPSession): Response {
         if (nodeIdHex.length != 64) return jsonError(Response.Status.BAD_REQUEST, "bad nodeId")
-        if (!allowSignalPost(session.remoteIpAddress ?: "?"))
+        if (!signalPostLimiter.allow(session.remoteIpAddress ?: "?"))
             return jsonError(Response.Status.TOO_MANY_REQUESTS, "rate limited")
         val body = readBody(session) ?: return jsonError(Response.Status.BAD_REQUEST, "missing body")
         if (body.length > MAX_SIGNAL_BYTES) return jsonError(Response.Status.BAD_REQUEST, "payload too large")
-        val q = signals.getOrPut(nodeIdHex) { ConcurrentLinkedQueue() }
-        q.add(body)
-        while (q.size > MAX_QUEUE_LEN) q.poll()            // bounded queue: drop oldest
-        signalActivityAt[nodeIdHex] = System.currentTimeMillis()
+        signalQueues.post(nodeIdHex, body, System.currentTimeMillis())
         return jsonResponse(Response.Status.OK, JSONObject().put("status", "queued"))
     }
 
@@ -243,18 +222,14 @@ class AuroraRendezvousServer(
         // pending pairing/call signals waiting there.
         if (!verifyDrain(nodeIdHex, session))
             return jsonError(Response.Status.UNAUTHORIZED, "drain authentication required")
-        val queue = signals[nodeIdHex]
         val arr = JSONArray()
-        if (queue != null) {
-            while (true) arr.put(queue.poll() ?: break)
-        }
-        signalActivityAt[nodeIdHex] = System.currentTimeMillis()
+        signalQueues.drain(nodeIdHex, System.currentTimeMillis()).forEach { arr.put(it) }
         return jsonResponse(Response.Status.OK, JSONObject().put("payloads", arr))
     }
 
     /** Verify a signed drain: ts fresh, pub == the key that checked in, signature valid. */
     private fun verifyDrain(nodeIdHex: String, session: IHTTPSession): Boolean {
-        val node = nodes[nodeIdHex] ?: return false      // must be registered (pubkey known)
+        val node = registry.get(nodeIdHex) ?: return false   // must be registered (pubkey known)
         val headers = session.headers                    // NanoHTTPD lowercases header names
         val ts = headers["x-drain-ts"]?.toLongOrNull() ?: return false
         if (kotlin.math.abs(System.currentTimeMillis() - ts) > CHECKIN_FRESHNESS_MS) return false
@@ -287,21 +262,17 @@ class AuroraRendezvousServer(
         val json = JSONObject(body)
         val spk = json.optJSONObject("spk") ?: return jsonError(Response.Status.BAD_REQUEST, "missing spk")
         val opksArr = json.optJSONArray("opks") ?: JSONArray()
-        val q = ConcurrentLinkedQueue<String>()
-        for (i in 0 until minOf(opksArr.length(), PREKEY_OPK_MAX)) {
-            opksArr.optJSONObject(i)?.let { q.add(it.toString()) }
-        }
-        prekeys[nodeIdHex] = PrekeyStore(spk.toString(), q, System.currentTimeMillis())
+        val opks = (0 until opksArr.length()).mapNotNull { opksArr.optJSONObject(it)?.toString() }
+        prekeyDir.publish(nodeIdHex, spk.toString(), opks, System.currentTimeMillis())
         return jsonResponse(Response.Status.OK, JSONObject().put("status", "stored"))
     }
 
     private fun handlePrekeyFetch(nodeIdHex: String): Response {
-        val store = prekeys[nodeIdHex]
+        val bundle = prekeyDir.fetch(nodeIdHex)
             ?: return jsonError(Response.Status.NOT_FOUND, "no prekey bundle")
-        val opk = store.opks.poll()   // pop one one-time prekey (null when exhausted)
         val resp = JSONObject()
-            .put("spk", JSONObject(store.spkJson))
-            .put("opk", if (opk != null) JSONObject(opk) else JSONObject.NULL)
+            .put("spk", JSONObject(bundle.spkJson))
+            .put("opk", if (bundle.opkJson != null) JSONObject(bundle.opkJson) else JSONObject.NULL)
         return jsonResponse(Response.Status.OK, resp)
     }
 
@@ -309,36 +280,9 @@ class AuroraRendezvousServer(
 
     private fun purgeExpired() {
         val cutoff = System.currentTimeMillis() - TTL_MS
-        nodes.values.removeIf { it.storedAtMs < cutoff }
-        lastCheckinByNode.values.removeIf { it < cutoff }
-        prekeys.entries.removeIf { it.value.storedAtMs < cutoff }
-        // Drop signal queues with no recent activity (covers never-drained queues too).
-        val stale = signals.keys.filter { (signalActivityAt[it] ?: 0L) < cutoff }
-        stale.forEach { signals.remove(it); signalActivityAt.remove(it) }
-    }
-
-    /** Allow at most 10 /find lookups per requester IP per minute. */
-    private fun allowFind(requesterIp: String): Boolean {
-        val now = System.currentTimeMillis()
-        val timestamps = findTimestampsByIp.getOrPut(requesterIp) { mutableListOf() }
-        synchronized(timestamps) {
-            timestamps.removeIf { now - it > 60_000 }
-            if (timestamps.size >= FIND_RATE_LIMIT_PER_MIN) return false
-            timestamps.add(now)
-            return true
-        }
-    }
-
-    /** Allow at most [SIGNAL_POST_RATE_LIMIT_PER_MIN] signal posts per IP per minute. */
-    private fun allowSignalPost(requesterIp: String): Boolean {
-        val now = System.currentTimeMillis()
-        val timestamps = signalPostTimestampsByIp.getOrPut(requesterIp) { mutableListOf() }
-        synchronized(timestamps) {
-            timestamps.removeIf { now - it > 60_000 }
-            if (timestamps.size >= SIGNAL_POST_RATE_LIMIT_PER_MIN) return false
-            timestamps.add(now)
-            return true
-        }
+        registry.purge(cutoff)
+        prekeyDir.purge(cutoff)
+        signalQueues.purge(cutoff)
     }
 
     /** True iff nodeId == SHA3-256(kemPub.toBytes() ‖ signPub.toBytes()) for these keys. */
