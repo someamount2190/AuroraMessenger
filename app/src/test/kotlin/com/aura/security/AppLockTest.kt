@@ -66,14 +66,25 @@ class AppLockTest {
     }
 
     @Test fun lockoutDelay_growsWithMoreFailures() {
-        clock = 0L
+        clock = 1_000L
         val lock = newLock()
         lock.setPin("1234")
-        repeat(5) { lock.tryUnlock("x") }        // first lockout
-        val firstUntil = lock.lockoutUntil.value
-        clock = firstUntil + 1
-        repeat(2) { lock.tryUnlock("x") }        // two more failures past the window
-        assertTrue(lock.lockoutUntil.value - clock > firstUntil, "delay must grow with failures")
+        repeat(5) { lock.tryUnlock("x") }                       // first lockout
+        val firstDelay = lock.lockoutUntil.value - clock
+        clock = lock.lockoutUntil.value + 1                     // step past the window
+        repeat(2) { lock.tryUnlock("x") }                      // two more failures
+        val secondDelay = lock.lockoutUntil.value - clock
+        // Compare DELTAS (robust to the start clock), not absolute timestamps.
+        assertTrue(secondDelay > firstDelay, "lockout delay must grow: $secondDelay !> $firstDelay")
+    }
+
+    @Test fun perInstallSalt_sameePinHashesDifferently() {
+        val a = ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("salt_a", Context.MODE_PRIVATE)
+        val b = ApplicationProvider.getApplicationContext<Context>().getSharedPreferences("salt_b", Context.MODE_PRIVATE)
+        AppLock(a) { clock }.setPin("1234")
+        AppLock(b) { clock }.setPin("1234")
+        // Same PIN, different installs ⇒ different stored hashes (per-install random salt; rainbow-table resistance).
+        assertNotEquals(a.getString("real_hash", null), b.getString("real_hash", null))
     }
 
     @Test fun storedHash_isNotThePlaintextPin() {

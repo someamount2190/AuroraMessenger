@@ -62,19 +62,23 @@ class DisappearingMessagesTest {
         assertNull(db.messageDao().byId("m1")!!.expiresAtMs, "timer OFF must not stamp an expiry")
     }
 
-    @Test fun purgeExpired_deletesExpiredRowsAndMedia_keepsLive(): Unit = runBlocking {
+    @Test fun purgeExpired_deletesOnlyExpiredRowsAndTheirMedia(): Unit = runBlocking {
         contactWithTimer(DisappearingTimer.ONE_HOUR)
-        val past = System.currentTimeMillis() - 1_000
+        val now = System.currentTimeMillis()
         db.messageDao().insert(MessageEntity("expired", node, fromMe = false, body = "", timestampMs = 1,
-            status = "delivered", type = "image", mediaPath = "/enc/old", expiresAtMs = past))
-        db.messageDao().insert(MessageEntity("live", node, fromMe = false, body = "stay", timestampMs = 2,
-            status = "delivered"))   // no expiry
+            status = "delivered", type = "image", mediaPath = "/enc/old", expiresAtMs = now - 1_000))
+        // A row stamped with a FUTURE expiry (and its own media) must survive — exercises the
+        // time comparison itself, not just the IS NULL branch, and pins that purge targets only
+        // expired rows' media.
+        db.messageDao().insert(MessageEntity("future", node, fromMe = false, body = "stay", timestampMs = 2,
+            status = "delivered", type = "image", mediaPath = "/enc/live", expiresAtMs = now + 3_600_000))
 
         dm().purgeExpired()
 
         assertNull(db.messageDao().byId("expired"), "expired row must be purged")
-        assertNotNull(db.messageDao().byId("live"), "non-expiring row must survive")
-        coVerify { media.delete("/enc/old") }     // the disappeared message's media file is deleted
+        assertNotNull(db.messageDao().byId("future"), "a stamped-but-not-yet-expired row must survive")
+        coVerify(exactly = 1) { media.delete("/enc/old") }    // expired media deleted...
+        coVerify(exactly = 0) { media.delete("/enc/live") }   // ...and ONLY the expired one
     }
 
     @Test fun setTimer_persistsAndNotifiesPeer(): Unit = runBlocking {

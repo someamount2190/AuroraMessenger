@@ -18,7 +18,13 @@ import kotlin.test.assertTrue
  * Migration data-preservation tests. The production `AuroraDatabase.build` is SQLCipher-backed
  * (native lib, not loadable under Robolectric), so we exercise the `Migration` objects directly
  * against a plain in-memory SQLite built from the prior schema — proving the SQL each migration
- * runs both transforms the schema AND preserves the rows it must not touch.
+ * runs both transforms the schema AND preserves the rows it must not touch. The "before" schemas
+ * mirror the committed `app/schemas/<v>.json` exactly (not a minimal hand-build) so they can't
+ * drift from reality.
+ *
+ * KNOWN LIMIT: this does NOT run Room's post-migration identity-hash validation (a result schema
+ * that Room would reject at runtime could still pass here) — that needs an instrumented
+ * `MigrationTestHelper.runMigrationsAndValidate`, which this Robolectric/CI lane doesn't run.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -49,10 +55,17 @@ class AuroraDatabaseMigrationTest {
         db.execSQL("CREATE TABLE ratchet_skipped (contactNodeIdHex TEXT NOT NULL, n INTEGER NOT NULL, messageKeyB64 TEXT NOT NULL, PRIMARY KEY(contactNodeIdHex, n))")
         db.execSQL("CREATE TABLE kem_ratchet (contactNodeIdHex TEXT NOT NULL PRIMARY KEY, sessionB64 TEXT NOT NULL)")
         db.execSQL("CREATE TABLE contacts (nodeIdHex TEXT NOT NULL PRIMARY KEY, displayName TEXT NOT NULL)")
+        // Seed EVERY surviving v9 table so a migration that drops the WRONG table is caught.
+        db.execSQL("CREATE TABLE messages (id TEXT NOT NULL PRIMARY KEY, contactNodeIdHex TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE mesh_peers (ipPort TEXT NOT NULL PRIMARY KEY)")
+        db.execSQL("CREATE TABLE prekeys (prekeyId TEXT NOT NULL PRIMARY KEY)")
         db.execSQL("INSERT INTO ratchet_state VALUES ('c1','s',0,'r',0,'fp','mk')")
         db.execSQL("INSERT INTO ratchet_skipped VALUES ('c1',1,'k1')")
         db.execSQL("INSERT INTO kem_ratchet VALUES ('c1','old-unversioned-blob')")
         db.execSQL("INSERT INTO contacts VALUES ('c1','Alice')")
+        db.execSQL("INSERT INTO messages VALUES ('m1','c1')")
+        db.execSQL("INSERT INTO mesh_peers VALUES ('1.2.3.4:5')")
+        db.execSQL("INSERT INTO prekeys VALUES ('p1')")
 
         AuroraDatabase.MIGRATION_9_10.migrate(db)
 
@@ -60,6 +73,9 @@ class AuroraDatabaseMigrationTest {
         assertFalse(tableExists("ratchet_skipped"), "ratchet_skipped must be dropped")
         assertEquals(0, count("kem_ratchet"), "stale unversioned KEM blobs must be cleared")
         assertEquals(1, count("contacts"), "contacts must be preserved (migration must not be destructive)")
+        assertEquals(1, count("messages"), "messages must survive 9→10")
+        assertEquals(1, count("mesh_peers"), "mesh_peers must survive 9→10")
+        assertEquals(1, count("prekeys"), "prekeys must survive 9→10")
     }
 
     // ── v8 → v9: add the kem_ratchet table (additive; existing data untouched) ──────────────────
@@ -78,9 +94,10 @@ class AuroraDatabaseMigrationTest {
 
     // ── v7 → v8: rebuild prekeys with X-Wing columns (prekeys are ephemeral → drop is lossless) ─
     @Test fun migration_7_8_rebuildsPrekeysWithXWingColumns() {
-        // old prekeys schema (kyber/x25519 column pairs)
-        db.execSQL("CREATE TABLE prekeys (prekeyId TEXT NOT NULL PRIMARY KEY, kind TEXT NOT NULL, kyberPubB64 TEXT NOT NULL, x25519PubB64 TEXT NOT NULL, createdAtMs INTEGER NOT NULL)")
-        db.execSQL("INSERT INTO prekeys VALUES ('p1','spk','k','x',1)")
+        // EXACT v7 prekeys schema (from app/schemas/com.aura.db.AuroraDatabase/7.json) — the prior
+        // hand-built fixture was missing kyberPrivB64/x25519PrivB64/usedAtMs, so it tested a fiction.
+        db.execSQL("CREATE TABLE prekeys (`prekeyId` TEXT NOT NULL, `kind` TEXT NOT NULL, `kyberPubB64` TEXT NOT NULL, `x25519PubB64` TEXT NOT NULL, `kyberPrivB64` TEXT NOT NULL, `x25519PrivB64` TEXT NOT NULL, `createdAtMs` INTEGER NOT NULL, `usedAtMs` INTEGER, PRIMARY KEY(`prekeyId`))")
+        db.execSQL("INSERT INTO prekeys (prekeyId, kind, kyberPubB64, x25519PubB64, kyberPrivB64, x25519PrivB64, createdAtMs) VALUES ('p1','spk','kp','xp','kpr','xpr',1)")
 
         AuroraDatabase.MIGRATION_7_8.migrate(db)
 

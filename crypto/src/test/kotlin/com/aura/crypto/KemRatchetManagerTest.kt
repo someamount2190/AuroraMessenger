@@ -35,6 +35,8 @@ class KemRatchetManagerTest {
     private val aad = "aura-msg-v1".toByteArray()
     private val ROOT = ByteArray(32) { 0x5A }
     private val BOB = "bob"; private val ALICE = "alice"
+    // Frozen SAS code for root=0x5A×32, target="peer-identity" (this implementation's value).
+    private val PINNED_SAS = "386501"
 
     @Test fun seed_thenInitiatorFirst_roundTrips() = runBlocking {
         val a = manager(); val b = manager()
@@ -139,6 +141,18 @@ class KemRatchetManagerTest {
         assertNotEquals(a.sasCodeFor(BOB, "x"), b.sasCodeFor(ALICE, "x"))
     }
 
+    /**
+     * Pin the SAS code for a fixed root + target. The A==B / differs-on-MITM checks only prove the
+     * derivation is *symmetric*; any change that stays symmetric (different HKDF info, bit-packing,
+     * output length) survives them. This freezes the actual protocol value — an Aurora-internal
+     * authority — so a derivation change that would silently break cross-version/peer interop fails.
+     */
+    @Test fun sasCode_isPinned_forFixedRootAndTarget() = runBlocking {
+        val a = manager()
+        a.seed(BOB, ByteArray(32) { 0x5A }, iAmInitiator = true)
+        assertEquals(PINNED_SAS, a.sasCodeFor(BOB, "peer-identity"))
+    }
+
     @Test fun mediaKey_presentAfterSeed_stableAcrossRatcheting_andLocalOnly() = runBlocking {
         val a = manager(); val b = manager()
         a.seed(BOB, ROOT.copyOf(), iAmInitiator = true)
@@ -195,16 +209,23 @@ class KemRatchetManagerTest {
      * must fail CLOSED — read as not-seeded, every accessor null — never throw out of the manager.
      */
     @Test fun legacyOrMalformedBlob_failsClosed() = runBlocking {
-        val store = MemStore()
-        val a = KemRatchetManager(store, HybridKem(), Hkdf(), SymmetricCipher())
-        // Old format: bare sessionToBytes started with the 4-byte big-endian rootKey length
-        // (0x00 0x00 0x00 0x20…), so byte[0] != the new record version.
-        store.save(BOB, byteArrayOf(0x00, 0x00, 0x00, 0x20, 1, 2, 3, 4))
+        // Each blob exercises a DISTINCT rejection path so no single check carries all of them:
+        //  (a) old bare-session format: short AND wrong version byte (0x00 != REC_VERSION);
+        //  (b) right length but WRONG version byte — isolates the version-discriminator alone;
+        //  (c) right version + full 41-byte header but a GARBAGE session tail — the realistic
+        //      "survived an upgrade / corrupt row" case, which only fails inside sessionFromBytes.
+        val legacyShort = byteArrayOf(0x00, 0x00, 0x00, 0x20, 1, 2, 3, 4)
+        val wrongVersion = ByteArray(64).also { it[0] = 0x02 }                       // len 64 ≥ header, ver 2
+        val corruptSession = ByteArray(41 + 32).also { it[0] = 0x01 }                // ver ok, header ok, junk tail
 
-        assertFalse(a.isSeeded(BOB))
-        assertNull(a.sealNext(BOB, "x".toByteArray(), aad))
-        assertNull(a.open(BOB, ByteArray(32), aad))
-        assertNull(a.mediaKey(BOB))
-        assertNull(a.sasCodeFor(BOB, "x"))
+        for ((label, blob) in listOf("legacyShort" to legacyShort, "wrongVersion" to wrongVersion, "corruptSession" to corruptSession)) {
+            val store = MemStore().also { it.save(BOB, blob) }
+            val a = KemRatchetManager(store, HybridKem(), Hkdf(), SymmetricCipher())
+            assertFalse(a.isSeeded(BOB), "$label: must read as not-seeded")
+            assertNull(a.sealNext(BOB, "x".toByteArray(), aad), "$label: sealNext null")
+            assertNull(a.open(BOB, ByteArray(32), aad), "$label: open null")
+            assertNull(a.mediaKey(BOB), "$label: mediaKey null")
+            assertNull(a.sasCodeFor(BOB, "x"), "$label: sasCodeFor null")
+        }
     }
 }

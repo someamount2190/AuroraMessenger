@@ -95,7 +95,14 @@ class HybridCryptoAttacksTest {
     @Test fun nodeIdentity_bytesRoundTrip_andTamperRejected() = runBlocking {
         val gen = NodeIdentityGenerator(kem, signer, hkdf)
         val id = gen.generate().getOrThrow()
-        assertEquals(id.publicPart, NodePublicIdentity.fromBytes(id.publicPart.toBytes(), hkdf))
+        val parsed = NodePublicIdentity.fromBytes(id.publicPart.toBytes(), hkdf)
+        // NodePublicIdentity.equals only compares nodeId, so assert the KEY BYTES survived too —
+        // a serialization bug that corrupted a key while leaving the nodeId field intact would
+        // otherwise pass.
+        assertContentEquals(id.publicPart.kemPublicKey.encoded, parsed.kemPublicKey.encoded, "KEM pub round-trips")
+        assertContentEquals(id.publicPart.signingPublicKey.dilithiumPublicKey, parsed.signingPublicKey.dilithiumPublicKey, "ML-DSA pub round-trips")
+        assertContentEquals(id.publicPart.signingPublicKey.ed25519PublicKey, parsed.signingPublicKey.ed25519PublicKey, "Ed25519 pub round-trips")
+
         val tampered = id.publicPart.toBytes().also { it[it.size - 1] = (it[it.size - 1].toInt() xor 1).toByte() }
         assertFalse(runCatching { NodePublicIdentity.fromBytes(tampered, hkdf) }.isSuccess)
     }

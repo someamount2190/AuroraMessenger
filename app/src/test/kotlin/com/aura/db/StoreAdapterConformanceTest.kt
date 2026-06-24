@@ -40,7 +40,7 @@ class StoreAdapterConformanceTest {
 
     private suspend fun kemSessionContract(store: KemSessionStore) {
         val blobA = ByteArray(64) { it.toByte() }
-        val blobB = ByteArray(8) { 0x7F }
+        val blobB = ByteArray(8) { (0xF0 - it).toByte() }   // non-uniform → the replace path also pins byte order
         store.save("a", blobA)
         store.save("b", blobB)
         assertNotNull(store.load("a"))
@@ -88,4 +88,18 @@ class StoreAdapterConformanceTest {
     @Test fun prekeyStore_fake_satisfiesContract() = runBlocking { prekeyContract(FakePrekeyStore()) }
 
     @Test fun prekeyStore_room_satisfiesContract() = runBlocking { prekeyContract(RoomPrekeyStore(db.prekeyDao())) }
+
+    /**
+     * The `PrekeyStore` interface (and `PrekeyRecord`) has no `usedAtMs`, so the shared contract
+     * above can never exercise the production `... WHERE usedAtMs IS NULL` filter. Pin it directly
+     * against the Room DAO: a consumed (used) OPK must be excluded from unusedOpks/unusedOpkCount,
+     * else a real device would re-publish a spent one-time prekey (forward-secrecy regression).
+     */
+    @Test fun roomPrekeyDao_excludesUsedOpks() = runBlocking {
+        db.prekeyDao().insert(PrekeyEntity("fresh", "opk", "kp", "kpr", createdAtMs = 1))
+        db.prekeyDao().insert(PrekeyEntity("used", "opk", "kp", "kpr", createdAtMs = 2, usedAtMs = 99))
+
+        assertEquals(1, db.prekeyDao().unusedOpkCount(), "a used OPK must not be counted as unused")
+        assertEquals(listOf("fresh"), db.prekeyDao().unusedOpks(5).map { it.prekeyId })
+    }
 }

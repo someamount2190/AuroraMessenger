@@ -59,8 +59,13 @@ class HybridKemTest {
     }
 
     @Test fun fromBytes_rejectsTruncated() {
-        assertFailsWith<IllegalArgumentException> { HybridPublicKey.fromBytes(ByteArray(2)) }
+        assertFailsWith<IllegalArgumentException> { HybridPublicKey.fromBytes(ByteArray(2)) }       // < 4-byte prefix
         assertFailsWith<IllegalArgumentException> { HybridCiphertext.fromBytes(ByteArray(2)) }
+        // Valid 4-byte length prefix declaring more bytes than follow — exercises the
+        // `size == 4 + len` clause specifically (a separate check from the >= 4 guard above).
+        val lyingPrefix = intTo4Bytes(1000) + ByteArray(3)
+        assertFailsWith<IllegalArgumentException> { HybridPublicKey.fromBytes(lyingPrefix) }
+        assertFailsWith<IllegalArgumentException> { HybridCiphertext.fromBytes(lyingPrefix) }
     }
 
     // ── deterministicKeyPair: the pairing-bootstrap determinism guarantee ────────

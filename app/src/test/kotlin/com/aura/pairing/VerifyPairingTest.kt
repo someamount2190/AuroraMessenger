@@ -21,6 +21,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -87,10 +88,39 @@ class VerifyPairingTest {
         val wrong = if (expected == "000000") "111111" else "000000"
 
         val v = verifier()
-        repeat(5) { assertFalse(v.submitVerifyCode(node, wrong).getOrThrow(), "wrong code must fail") }
+        repeat(4) { assertFalse(v.submitVerifyCode(node, wrong).getOrThrow(), "wrong code must fail") }
+        // Pin the threshold: must NOT have fired yet at 4 (an off-by-one to >=4 would trip here).
+        coVerify(exactly = 0) { settings.blockNode(node) }
+        coVerify(exactly = 0) { eraser.wipe(node) }
 
-        coVerify { settings.blockNode(node) }       // brute-force defense fired
-        coVerify { eraser.wipe(node) }              // cryptographic erase of the contact
+        assertFalse(v.submitVerifyCode(node, wrong).getOrThrow())   // the 5th wrong code
+        coVerify(exactly = 1) { settings.blockNode(node) }          // brute-force defense fired
+        coVerify(exactly = 1) { eraser.wipe(node) }                 // cryptographic erase of the contact
+    }
+
+    @Test fun handlePairVerify_forgedSignature_doesNotActivate() = runBlocking {
+        coEvery { identity.getOrCreate() } returns testIdentity(1)
+        val myHex = testIdentity(1).nodeId.toHex()
+        db.contactDao().upsert(ContactEntity(node, "Alice", "kpub", "ed", createdAtMs = 1, pairingSent = true,
+            pairState = PairState.VERIFY, isInitiator = false, iVerified = true))
+        coEvery { pairingSignal.verifyEd(any(), any(), any()) } returns false   // forged peer confirmation
+
+        verifier().handlePairVerify(JSONObject().put("from", node).put("to", myHex).put("sig", "forged")).getOrThrow()
+
+        assertEquals(PairState.VERIFY, db.contactDao().byNodeId(node)!!.pairState,
+            "a pairverify with a bad signature must NOT activate the contact (MITM completing the handshake)")
+    }
+
+    @Test fun handlePairVerify_validSignature_activatesWhenWeAlreadyVerified() = runBlocking {
+        coEvery { identity.getOrCreate() } returns testIdentity(1)
+        val myHex = testIdentity(1).nodeId.toHex()
+        db.contactDao().upsert(ContactEntity(node, "Alice", "kpub", "ed", createdAtMs = 1, pairingSent = true,
+            pairState = PairState.VERIFY, isInitiator = false, iVerified = true))
+        coEvery { pairingSignal.verifyEd(any(), any(), any()) } returns true
+
+        verifier().handlePairVerify(JSONObject().put("from", node).put("to", myHex).put("sig", "ok")).getOrThrow()
+
+        assertEquals(PairState.ACTIVE, db.contactDao().byNodeId(node)!!.pairState)
     }
 
     @Test fun submitVerifyCode_ignoredOutsideVerifyState() = runBlocking {

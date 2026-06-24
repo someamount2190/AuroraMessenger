@@ -87,4 +87,23 @@ class SignalCodecAadTest {
         assertNotNull(incoming, "the correct codec still opens the frame (not burned by the failed attempt)")
         assertEquals("offer", incoming.inner.getString("kind"))
     }
+
+    @Test fun rtcFrame_cannotBeOpenedAsCall_mirrorDirection() = runBlocking {
+        setup()
+        val payload = slot<String>()
+        coEvery { rendezvous.postSignal(any(), any(), capture(payload)) } returns Result.success(Unit)
+
+        val aliceRtc = RtcSignalCodec(idAlice, db.contactDao(), kemAlice, rendezvous, settings)
+        val bobCall = CallSignalCodec(idBob, db.contactDao(), kemBob, rendezvous, settings)
+        val bobRtc = RtcSignalCodec(idBob, db.contactDao(), kemBob, rendezvous, settings)
+
+        assertEquals(true, aliceRtc.send(bobHex, JSONObject().put("kind", "ice")))
+        val envelope = JSONObject(payload.captured)
+        assertEquals("rtc", envelope.getString("type"))
+
+        assertNull(bobCall.receive(envelope), "an RTC frame must not open under the call label")
+        val incoming = bobRtc.receive(envelope)
+        assertNotNull(incoming, "the correct (RTC) codec opens it")
+        assertEquals("ice", incoming.inner.getString("kind"))
+    }
 }

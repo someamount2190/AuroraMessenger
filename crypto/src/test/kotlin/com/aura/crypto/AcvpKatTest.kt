@@ -19,17 +19,26 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * **Independent-authority** known-answer tests for the FIPS post-quantum primitives Aurora's
- * `HybridKem` / `HybridSigner` wrap through BouncyCastle: **ML-KEM-768** (FIPS 203) key
- * generation, encapsulation and decapsulation, and **ML-DSA-65** (FIPS 204) key generation.
+ * **Independent-authority** known-answer tests for the raw FIPS post-quantum primitives as
+ * implemented by **BouncyCastle**: **ML-KEM-768** (FIPS 203) key generation, encapsulation and
+ * decapsulation, and **ML-DSA-65** (FIPS 204) key generation.
+ *
+ * SCOPE — read carefully. These test the **BouncyCastle primitives directly**, not Aurora's
+ * wrappers. Aurora's [HybridKem] is **X-Wing** (ML-KEM-768 + X25519 combined), and [HybridSigner]
+ * re-serializes a hybrid ML-DSA‖Ed25519 signature — neither of those is exercised here, so a bug
+ * in Aurora's X-Wing wiring, the X25519 half, the combiner, or the length-prefix serialization is
+ * NOT caught by this file (it's covered functionally, not by KAT, in [HybridKemTest] /
+ * [HybridSignerTest]; an independent X-Wing KAT is a known gap — X-Wing tracks a moving IETF
+ * draft). What this file IS: an independent check that the vendored BC version computes FIPS 203/204
+ * correctly — a strong BC-upgrade tripwire, and the authority backing the ML-KEM-768 half that
+ * X-Wing builds on.
  *
  * Unlike [PqcKatTest] (which pins a digest of BC's *own* output — a regression tripwire, not an
  * authority) these vectors come from the **NIST ACVP** generation/validation suite
  * (usnistgov/ACVP-Server), vendored under `src/test/resources/acvp/`. BC's keygen/encaps draw
  * their randomness from a `SecureRandom`; feeding the exact ACVP seed bytes (`d‖z` for ML-KEM
  * keygen, `m` for encaps, `ξ` for ML-DSA keygen) makes the operation the standard's deterministic
- * KAT, so the produced encapsulation/keys/ciphertext/shared-secret must equal the published
- * expected values. This closes the keygen/encaps gap that Wycheproof (decaps/verify only) left.
+ * KAT, so the produced encapsulation/keys/ciphertext/shared-secret must equal the published values.
  */
 class AcvpKatTest {
 
