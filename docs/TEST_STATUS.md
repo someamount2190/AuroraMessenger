@@ -7,12 +7,12 @@ Last updated: 2026-06-23 (post crypto re-engineering — pure-JVM, no liboqs/nat
 
 | | Verified green | Skipped |
 |---|---|---|
-| `crypto` module | **146** | 0 |
+| `crypto` module | **150** | 0 |
 | `app` module | **110** | 0 |
-| **Total** | **256** | 0 |
+| **Total** | **260** | 0 |
 
 Run (both pure-JVM/Robolectric, no native deps, CI-friendly):
-- `./gradlew -p crypto test` → 146 pass.
+- `./gradlew -p crypto test` → 150 pass.
 - `./gradlew :app:testDebugUnitTest` → 110 pass.
 
 ## Crypto — all pure-JVM now ✅
@@ -24,11 +24,13 @@ runs on CI; there is no longer a device-only "native" tier or any `assumeTrue` s
   `SymmetricCipherKatTest` (Tink XChaCha vs. clean-room reference), `HybridKemTest` (X-Wing),
   `HybridSignerTest` (ML-DSA-65 + Ed25519, incl. the 3309-byte FIPS size), `NodeIdentityTest`,
   `PrekeyManagerTest`, utils.
-- **Known-answer / known-bug vectors:** `PqcKatTest` (deterministic ML-KEM-768 / ML-DSA-65 /
-  X-Wing sizes + regression digests), `WycheproofTest` (x25519 / ed25519 / xchacha /
+- **Known-answer / known-bug vectors:** `AcvpKatTest` (**independent-authority NIST ACVP**:
+  ML-KEM-768 keygen + encapsulation + decapsulation and ML-DSA-65 keygen, byte-exact vs the
+  published vectors — closes the keygen/encaps gap), `WycheproofTest` (x25519 / ed25519 / xchacha /
   mlkem_768 / **mldsa_65 verify** edge + known-bug corpora — incl. ML-DSA context binding,
   modified-signature, zero-key, and incorrect-length rejection), `ClassicalKatTest`
-  (Ed25519 RFC 8032, X25519 RFC 7748).
+  (Ed25519 RFC 8032, X25519 RFC 7748), `PqcKatTest` (deterministic ML-KEM-768 / ML-DSA-65 /
+  X-Wing sizes + round-trip + cross-version regression digests).
 - **KEM Double Ratchet (the single ratchet):** `KemDoubleRatchetTest` (round-trips, out-of-order,
   simultaneous steps, tamper/replay, **post-compromise healing**), `KemRatchetCodecTest`
   (wire frame + session persistence round-trips), `KemRatchetManagerTest` (store-backed,

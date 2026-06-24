@@ -43,6 +43,11 @@ import kotlin.test.assertTrue
  *     changes the wire/output format. The digests are computed from the library itself, so
  *     they are *regression* vectors, not an independent authority; they still catch the
  *     change that matters most here (X-Wing tracks an in-progress draft).
+ *
+ * For **independent-authority** KATs of ML-KEM-768 keygen/encaps/decaps and ML-DSA-65 keygen
+ * (NIST ACVP vectors), see [AcvpKatTest]. X-Wing has no independent vector here (it tracks a
+ * moving draft), but its ML-KEM-768 half, X25519 half, and decaps direction are each
+ * independently pinned (ACVP, RFC 7748 in [ClassicalKatTest], Wycheproof in [WycheproofTest]).
  */
 class PqcKatTest {
 

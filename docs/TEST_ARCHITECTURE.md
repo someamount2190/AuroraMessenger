@@ -78,7 +78,7 @@ crypto/src/test/kotlin/com/aura/crypto/   (all pure-JVM, incl. PQC)
   HkdfTest.kt  HkdfRfc5869KatTest.kt   SymmetricCipherTest.kt  SymmetricCipherKatTest.kt
   HybridKemTest.kt  HybridSignerTest.kt  NodeIdentityTest.kt  PrekeyManagerTest.kt
   KemDoubleRatchetTest.kt  KemRatchetCodecTest.kt  KemRatchetManagerTest.kt
-  PqcKatTest.kt  WycheproofTest.kt  ClassicalKatTest.kt
+  PqcKatTest.kt  AcvpKatTest.kt  WycheproofTest.kt  ClassicalKatTest.kt   (vectors)
   CryptoAttacks.kt  HybridCryptoAttacksTest.kt   (adversarial)
   CryptoUtilsTest.kt  B64Test.kt  CryptoResultTest.kt  CryptoStackDemo.kt
   testutil/ (FakeKemSessionStore, FakePrekeyStore)
