@@ -118,6 +118,7 @@ class ScannerPairing @Inject constructor(
         val myNodeIdHex = identity.nodeId.toHex()
         val from = json.optString("from")
         require(json.optString("to") == myNodeIdHex) { "pairaccept addressed elsewhere" }
+        if (settings.isBlocked(from)) return@runCatching Unit   // blocked after the scan → don't proceed
         val contact = contactDao.byNodeId(from) ?: return@runCatching Unit
         if (contact.pairState != PairState.REQUESTED) return@runCatching Unit
 

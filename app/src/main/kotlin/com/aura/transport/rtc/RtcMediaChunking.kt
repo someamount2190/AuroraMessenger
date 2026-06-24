@@ -58,11 +58,15 @@ internal class RtcMediaReassembler(private val maxBytes: Int) {
 
     private val accums = ConcurrentHashMap<String, Accum>()
 
-    /** Begin a transfer from a "media" start frame. Returns false if the chunk count is absent/insane. */
+    /** Begin a transfer from a "media" start frame. Returns false if the chunk count is absent/insane,
+     *  or if too many transfers are already in flight (bounds total pre-decode memory a peer can pin). */
     fun begin(meta: JSONObject): Boolean {
         val id = meta.optString("id")
         val chunks = meta.optInt("chunks", -1)
         if (id.isEmpty() || chunks < 1 || chunks > MAX_CHUNKS) return false
+        // Per-transfer bytes are capped in [chunk]; also cap the NUMBER of concurrent transfers so a
+        // peer can't pin unbounded memory by opening many start frames and never finishing them.
+        if (!accums.containsKey(id) && accums.size >= MAX_CONCURRENT_TRANSFERS) return false
         accums[id] = Accum(meta, chunks)
         return true
     }
@@ -90,6 +94,8 @@ internal class RtcMediaReassembler(private val maxBytes: Int) {
         // 1024 * 64 KiB = 64 MiB structural ceiling; the real cap is [maxBytes] (the 50 MB store limit).
         private const val MAX_CHUNKS = 1024
         private const val REASSEMBLY_SLACK = 64 * 1024
+        /** Cap on simultaneously in-flight (unfinished) transfers per session. */
+        private const val MAX_CONCURRENT_TRANSFERS = 8
 
         /** Decode + concatenate the ordered base64 parts into the sealed blob (heavy; call off-thread). */
         fun assemble(parts: List<String>): ByteArray {

@@ -103,4 +103,14 @@ class RtcMediaChunkingTest {
         val orphan = RtcMediaChunking.chunkFrame("never-began", 0, blob(100), 0, 100)
         assertNull(r.chunk(orphan))
     }
+
+    @Test fun tooManyConcurrentTransfers_areRejected() {
+        // A peer can't pin unbounded memory by opening many start frames and never finishing them.
+        val r = RtcMediaReassembler(10 * 1024 * 1024)
+        var accepted = 0
+        repeat(50) { i -> if (r.begin(JSONObject().put("t", "media").put("id", "t$i").put("chunks", 4))) accepted++ }
+        assertTrue(accepted in 1..16, "concurrent in-flight transfers must be capped, was $accepted")
+        // Re-issuing an already-in-flight id is still allowed (not a new slot).
+        assertTrue(r.begin(JSONObject().put("t", "media").put("id", "t0").put("chunks", 4)))
+    }
 }

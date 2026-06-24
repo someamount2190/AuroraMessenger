@@ -10,6 +10,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -59,4 +60,22 @@ class EncryptedMediaStoreTest {
         store.wipeAll()
         assertFalse(File(p1).exists()); assertFalse(File(p2).exists())
     }
+
+    @Test fun pathTraversalIds_areRejected_writeStaysInMediaDir() = runBlocking {
+        // A peer-controlled media id must never escape the media dir (CVE-class path traversal).
+        for (bad in listOf("../../evil", "../x", "a/b", "a\\b", "..", ".", "", "with space")) {
+            assertFalse(store.isValidId(bad), "id '$bad' must be rejected")
+            assertFailsWith<IllegalArgumentException>("id '$bad' must not produce a file") {
+                store.fileFor(bad)
+            }
+        }
+        // A real UUID (what the app actually mints) is accepted and stays under filesDir/media.
+        val id = java.util.UUID.randomUUID().toString()
+        assertTrue(store.isValidId(id))
+        val path = store.writeEncrypted(id, "x".toByteArray(), cipher.generateKey())
+        assertTrue(File(path).canonicalPath.startsWith(File(mediaDir).canonicalPath + File.separator))
+    }
+
+    private val mediaDir get() =
+        File(ApplicationProvider.getApplicationContext<Context>().filesDir, "media").absolutePath
 }

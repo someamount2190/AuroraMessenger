@@ -252,6 +252,9 @@ class MediaTransfer @Inject constructor(
         contactDao.byNodeId(from) ?: return null
 
         val messageId = meta.optString("id")
+        // Reject a peer-supplied id that isn't filename-safe (path traversal) before it ever
+        // reaches the media store. Drops the frame cleanly rather than throwing.
+        if (!mediaStore.isValidId(messageId)) return null
 
         // Retransmit after a lost ack: already stored → re-ack without decrypting
         // (the ratchet key for this counter is already spent).

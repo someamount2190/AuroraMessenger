@@ -172,12 +172,14 @@ class KemDoubleRatchet(
             val ss = kem.decapsulate(h.kemCt, w.selfPriv!!).getOrNull() ?: return null
             val (rk, ck) = kdfRoot(w.rootKey, ss)
             ss.fill(0); w.rootKey.fill(0); w.rootKey = rk
+            w.recvChainKey?.fill(0)                        // wipe the finished previous chain key
             w.recvChainKey = ck
             w.peerPub = h.ratchetPub
             w.nr = 0
             // Rotate our own keypair so the peer encapsulates to a fresh key next; defer the
-            // matching sending-chain derivation (and its ciphertext) to our next send.
-            val kp = kem.generateKeyPair().getOrThrow()
+            // matching sending-chain derivation (and its ciphertext) to our next send. Fail closed
+            // (return null on the working copy) rather than throw out of decrypt.
+            val kp = kem.generateKeyPair().getOrNull() ?: return null
             w.selfPriv = kp.privateKey; w.selfPub = kp.publicKey
             w.sendStepNeeded = true
         }
@@ -212,6 +214,7 @@ class KemDoubleRatchet(
                 w.skipped.remove(oldest)
             }
         }
+        if (chain !== ck) ck.fill(0)   // the original chain key is now orphaned — wipe it
         w.recvChainKey = chain
         return true
     }

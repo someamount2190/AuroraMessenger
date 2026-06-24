@@ -36,14 +36,14 @@ class SecureWipe @Inject constructor(
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     suspend fun wipeEverything() = withContext(ioDispatcher) {
-        // 1. Drop all rows (logical wipe even if the file delete below is blocked).
-        runCatching {
-            database.contactDao().deleteAll()
-            database.messageDao().deleteAll()
-            database.meshPeerDao().deleteAll()
-            database.ratchetDao().kemDeleteAll()
-            database.prekeyDao().deleteAll()
-        }
+        // 1. Drop all rows (logical wipe even if the file delete below is blocked). Each table is
+        //    wrapped independently so one failing DELETE can't skip the others (e.g. leaving the
+        //    ratchet/prekey key rows behind).
+        runCatching { database.contactDao().deleteAll() }
+        runCatching { database.messageDao().deleteAll() }
+        runCatching { database.meshPeerDao().deleteAll() }
+        runCatching { database.ratchetDao().kemDeleteAll() }
+        runCatching { database.prekeyDao().deleteAll() }
         // 2. Encrypted media files.
         runCatching { mediaStore.wipeAll() }
         // 3. App-layer key vaults: lock PINs, identity keys, settings.

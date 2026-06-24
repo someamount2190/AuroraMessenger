@@ -207,7 +207,10 @@ class AuroraRendezvousServer(
     // ── /signal/{nodeId} ──────────────────────────────────────────────────
 
     private fun handleSignalPost(nodeIdHex: String, session: IHTTPSession): Response {
-        if (nodeIdHex.length != 64) return jsonError(Response.Status.BAD_REQUEST, "bad nodeId")
+        // Validate charset too (not just length) so a flooder can't mint distinct queues under
+        // arbitrary 64-char strings (queue-count memory amplification).
+        if (nodeIdHex.length != 64 || !nodeIdHex.all { it in '0'..'9' || it in 'a'..'f' })
+            return jsonError(Response.Status.BAD_REQUEST, "bad nodeId")
         if (!signalPostLimiter.allow(session.remoteIpAddress ?: "?"))
             return jsonError(Response.Status.TOO_MANY_REQUESTS, "rate limited")
         val body = readBody(session) ?: return jsonError(Response.Status.BAD_REQUEST, "missing body")

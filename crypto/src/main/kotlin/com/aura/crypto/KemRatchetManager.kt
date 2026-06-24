@@ -35,7 +35,9 @@ class KemRatchetManager(
     data class Sealed(val bytes: ByteArray, val n: Long)
 
     private val locks = ConcurrentHashMap<String, Mutex>()
-    private fun lockFor(c: String) = locks.getOrPut(c) { Mutex() }
+    // computeIfAbsent (atomic on ConcurrentHashMap) — NOT MutableMap.getOrPut, whose get-then-put
+    // can hand two concurrent first-callers different Mutexes and defeat per-contact serialization.
+    private fun lockFor(c: String) = locks.computeIfAbsent(c) { Mutex() }
 
     /**
      * Establish the ratchet for a freshly paired contact from the 32-byte [root] (which is

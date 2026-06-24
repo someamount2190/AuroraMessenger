@@ -53,10 +53,11 @@ const TAP_RATE_LIMIT_PER_MIN = 30;       // per-IP cap on contentless wakes
 // never private material, never content. A node publishes a signed bundle (auth'd like
 // the drain); an initiator GETs it and the server pops one one-time prekey per fetch.
 const PREKEY_OPK_MAX = 100;              // cap on one-time prekeys retained per node
-// nodeId↔key binding. While false, a check-in without the KEM key is still accepted
-// (so older clients keep working during rollout); set STRICT_BINDING=1 once the new
-// app is rolled out to require it and fully close nodeId squatting.
-const STRICT_BINDING = process.env.STRICT_BINDING === '1';
+// nodeId↔key binding. Defaults ON: a check-in MUST carry the KEM + signing keys and prove they
+// hash to the claimed nodeId, otherwise anyone could squat/overwrite another node's mapping (and
+// the per-nodeId check-in clock would let them lock the victim out). The current app always sends
+// keys; an operator can opt out with STRICT_BINDING=0 only if knowingly supporting legacy clients.
+const STRICT_BINDING = process.env.STRICT_BINDING !== '0';
 // Hybrid check-in signature size: [4B len][ML-DSA-65 sig 3309][Ed25519 sig 64].
 // /find padding signatures match this length so the real candidate can't be
 // distinguished by signature size. (Was Dilithium-3's 3293 before the FIPS migration.)
@@ -91,6 +92,15 @@ function purge() {
     if (v < cutoff) { signals.delete(k); signalActivity.delete(k); }
   }
   for (const [k, v] of prekeys) if (v.storedAt < cutoff) prekeys.delete(k);
+  // Reap per-IP rate-limiter buckets whose timestamps have all aged out, so these maps don't
+  // grow one entry per distinct/rotating source IP forever (slow memory exhaustion).
+  const rlCutoff = Date.now() - 60000;
+  for (const m of [findHits, signalPostHits, tapHits]) {
+    for (const [k, arr] of m) {
+      const fresh = arr.filter((t) => t > rlCutoff);
+      if (fresh.length === 0) m.delete(k); else m.set(k, fresh);
+    }
+  }
 }
 
 function allowSignalPost(ip) {

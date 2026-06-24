@@ -27,7 +27,14 @@ class EncryptedMediaStore @Inject constructor(
         File(context.filesDir, "media").apply { mkdirs() }
     }
 
-    fun fileFor(messageId: String): File = File(mediaDir, "$messageId.enc")
+    /** True for ids safe as a filename component — no path separators, dots, or traversal. */
+    fun isValidId(messageId: String): Boolean = messageId.matches(SAFE_ID)
+
+    fun fileFor(messageId: String): File {
+        // Defense in depth: a peer-supplied id must never escape mediaDir (path traversal).
+        require(isValidId(messageId)) { "unsafe media id" }
+        return File(mediaDir, "$messageId.enc")
+    }
 
     /** Encrypt [plaintext] bytes to the message's media file. Returns the file path. */
     suspend fun writeEncrypted(messageId: String, plaintext: ByteArray, key: ByteArray): String =
@@ -76,5 +83,7 @@ class EncryptedMediaStore @Inject constructor(
         // ciphertext is stored on disk AND sent on the wire (no re-encryption).
         private val MEDIA_AAD = "aura-media-v1".toByteArray()
         const val MAX_MEDIA_BYTES = 50 * 1024 * 1024  // 50 MB per spec
+        /** Allowed media-id charset (UUIDs qualify); rejects '/', '\', '.', '..'. */
+        private val SAFE_ID = Regex("^[A-Za-z0-9_-]{1,128}$")
     }
 }

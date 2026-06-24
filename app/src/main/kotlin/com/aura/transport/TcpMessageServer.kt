@@ -74,7 +74,7 @@ class TcpMessageServer @Inject constructor(
                     // Bound concurrent connections (total + per remote IP) so a socket
                     // flood can't exhaust memory/threads with large pre-auth frames.
                     val ip = socket.inetAddress?.hostAddress ?: "?"
-                    val ipCount = connectionsByIp.getOrPut(ip) { java.util.concurrent.atomic.AtomicInteger(0) }
+                    val ipCount = connectionsByIp.computeIfAbsent(ip) { java.util.concurrent.atomic.AtomicInteger(0) }
                     if (activeConnections.get() >= MAX_CONNECTIONS || ipCount.get() >= MAX_CONNECTIONS_PER_IP) {
                         try { socket.close() } catch (e: Exception) {}
                         continue
@@ -86,7 +86,9 @@ class TcpMessageServer @Inject constructor(
                             android.util.Log.w("AuroraTcp", "connection handler failed: ${e.message}")
                         } finally {
                             activeConnections.decrementAndGet()
-                            ipCount.decrementAndGet()
+                            // Remove the per-IP entry once idle so the map can't grow unbounded
+                            // across distinct/churning source IPs (slow memory DoS).
+                            if (ipCount.decrementAndGet() <= 0) connectionsByIp.remove(ip, ipCount)
                         }
                     }
                 }
@@ -218,6 +220,16 @@ class TcpMessageServer @Inject constructor(
         if (targetAddr.isLoopbackAddress || targetAddr.isAnyLocalAddress ||
             targetAddr.isLinkLocalAddress || targetAddr.isSiteLocalAddress ||
             targetAddr.isMulticastAddress) return
+        // isSiteLocalAddress only covers the deprecated IPv6 fec0::/10 — explicitly reject the
+        // modern Unique-Local range fc00::/7, and conservatively refuse IPv4-mapped IPv6, so the
+        // relay can't be steered into an internal IPv6 network.
+        val raw = targetAddr.address
+        if (raw.size == 16) {
+            if ((raw[0].toInt() and 0xFE) == 0xFC) return                                  // fc00::/7 ULA
+            val v4Mapped = (0..9).all { raw[it].toInt() == 0 } &&
+                (raw[10].toInt() and 0xFF) == 0xFF && (raw[11].toInt() and 0xFF) == 0xFF
+            if (v4Mapped) return
+        }
 
         val payload = Base64.decode(frame.optString("payload"), Base64.NO_WRAP)
 

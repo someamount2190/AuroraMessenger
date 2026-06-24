@@ -35,13 +35,11 @@ class StartupMigrations @Inject constructor(
             // Pre-FIPS upgrade: the legacy identity + every contact, ratchet and prekey is
             // cryptographically unusable under the new formats. Reset to a clean slate (the
             // user re-pairs); message history under dead contacts is removed with them.
-            runCatching {
-                database.contactDao().deleteAll()
-                database.messageDao().deleteAll()
-                database.meshPeerDao().deleteAll()
-                database.ratchetDao().kemDeleteAll()
-                database.prekeyDao().deleteAll()
-            }
+            runCatching { database.contactDao().deleteAll() }
+            runCatching { database.messageDao().deleteAll() }
+            runCatching { database.meshPeerDao().deleteAll() }
+            runCatching { database.ratchetDao().kemDeleteAll() }
+            runCatching { database.prekeyDao().deleteAll() }
             runCatching { mediaStore.wipeAll() }
             runCatching { identityStore.clear() }   // forces a fresh FIPS identity next getOrCreate
         }
