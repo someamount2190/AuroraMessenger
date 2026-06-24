@@ -65,13 +65,17 @@ class StoreAdapterConformanceTest {
         store.insert(prekey("s2", "spk", 2))
         assertEquals("s2", store.currentSpk()!!.prekeyId)        // newest spk
 
-        store.insert(prekey("o1", "opk", 1))
-        store.insert(prekey("o2", "opk", 2))
-        assertEquals(2, store.unusedOpkCount())
-        assertEquals(2, store.unusedOpks(5).size)
+        // Insert OPKs out of createdAtMs order; both stores must return them OLDEST-FIRST
+        // (Room: `ORDER BY createdAtMs ASC`). Pins the fake against the production ordering.
+        store.insert(prekey("o-late", "opk", 30))
+        store.insert(prekey("o-early", "opk", 10))
+        store.insert(prekey("o-mid", "opk", 20))
+        assertEquals(3, store.unusedOpkCount())
+        assertEquals(listOf("o-early", "o-mid", "o-late"), store.unusedOpks(5).map { it.prekeyId })
+        assertEquals(listOf("o-early", "o-mid"), store.unusedOpks(2).map { it.prekeyId })
 
-        store.delete("o1")
-        assertNull(store.byId("o1"))
+        store.delete("o-early")
+        assertNull(store.byId("o-early"))
         store.deleteAll()
         assertNull(store.currentSpk())
         assertEquals(0, store.unusedOpkCount())

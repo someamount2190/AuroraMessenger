@@ -9,9 +9,9 @@ import kotlin.test.assertEquals
 /**
  * Functional demonstration of the pure-JVM crypto stacks: each test performs a real
  * encrypt → decrypt (or derive) round-trip and PRINTS the actual values so the
- * encryption/decryption is visible, then asserts correctness. (The post-quantum
- * stacks — Kyber KEM, Dilithium signatures, identity, PQXDH — are demonstrated in the
- * instrumented CryptoStackDemoNative on a device with liboqs.)
+ * encryption/decryption is visible, then asserts correctness. (The post-quantum stacks —
+ * X-Wing ML-KEM-768 KEM, ML-DSA-65 signatures, identity, PQXDH — are exercised by
+ * `HybridKemTest`, `HybridSignerTest`, `NodeIdentityTest`, and `HybridCryptoAttacksTest`.)
  */
 class CryptoStackDemo {
 

@@ -62,4 +62,34 @@ class HybridKemTest {
         assertFailsWith<IllegalArgumentException> { HybridPublicKey.fromBytes(ByteArray(2)) }
         assertFailsWith<IllegalArgumentException> { HybridCiphertext.fromBytes(ByteArray(2)) }
     }
+
+    // ── deterministicKeyPair: the pairing-bootstrap determinism guarantee ────────
+    // Both peers derive the responder's bootstrap key from the shared root via this;
+    // if it weren't reproducible across calls/instances, real two-process pairing breaks.
+
+    @Test fun deterministicKeyPair_sameSeed_sameKeyPair_acrossInstances() = runTest {
+        val seed = ByteArray(32) { (it * 7 + 1).toByte() }
+        val a = HybridKem().deterministicKeyPair(seed.copyOf()).getOrThrow()
+        val b = HybridKem().deterministicKeyPair(seed.copyOf()).getOrThrow()   // separate instance
+        assertContentEquals(a.publicKey.encoded, b.publicKey.encoded, "same seed ⇒ same public key")
+        assertContentEquals(a.privateKey.encoded, b.privateKey.encoded, "same seed ⇒ same private key")
+    }
+
+    @Test fun deterministicKeyPair_differentSeed_differentKeyPair() = runTest {
+        val k1 = kem.deterministicKeyPair(ByteArray(32) { 1 }).getOrThrow()
+        val k2 = kem.deterministicKeyPair(ByteArray(32) { 2 }).getOrThrow()
+        assertTrue(!k1.publicKey.encoded.contentEquals(k2.publicKey.encoded), "distinct seeds ⇒ distinct keys")
+    }
+
+    /** The real bootstrap shape: initiator encapsulates to the deterministic PUBLIC half, the
+     *  responder (who re-derives the keypair on the other device) decapsulates with the PRIVATE
+     *  half — both must recover the same secret. */
+    @Test fun deterministicKeyPair_bootstrapEncapDecap_agrees() = runTest {
+        val seed = ByteArray(32) { 0x42 }
+        val initiatorView = HybridKem().deterministicKeyPair(seed.copyOf()).getOrThrow()  // public half
+        val responderView = HybridKem().deterministicKeyPair(seed.copyOf()).getOrThrow()  // private half
+        val enc = kem.encapsulate(initiatorView.publicKey).getOrThrow()
+        val dec = kem.decapsulate(enc.ciphertext, responderView.privateKey).getOrThrow()
+        assertContentEquals(enc.sharedSecret, dec)
+    }
 }

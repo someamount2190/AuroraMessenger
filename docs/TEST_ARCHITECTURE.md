@@ -70,33 +70,40 @@ Add to `crypto/build.gradle.kts` (testImplementation) and `app/build.gradle.kts`
 
 ## 3. Source-set layout
 
+This is the **actual** layout (every file below exists and runs in CI). Everything runs as
+pure-JVM/Robolectric in the two CI jobs; there is no instrumented (`androidTest`) suite.
+
 ```
 crypto/src/test/kotlin/com/aura/crypto/   (all pure-JVM, incl. PQC)
   HkdfTest.kt  HkdfRfc5869KatTest.kt   SymmetricCipherTest.kt  SymmetricCipherKatTest.kt
   HybridKemTest.kt  HybridSignerTest.kt  NodeIdentityTest.kt  PrekeyManagerTest.kt
   KemDoubleRatchetTest.kt  KemRatchetCodecTest.kt  KemRatchetManagerTest.kt
-  PqcKatTest.kt  WycheproofTest.kt  ClassicalKatTest.kt  CryptoAttacks.kt
-  CryptoUtilsTest.kt  B64Test.kt  CryptoResultTest.kt
+  PqcKatTest.kt  WycheproofTest.kt  ClassicalKatTest.kt
+  CryptoAttacks.kt  HybridCryptoAttacksTest.kt   (adversarial)
+  CryptoUtilsTest.kt  B64Test.kt  CryptoResultTest.kt  CryptoStackDemo.kt
   testutil/ (FakeKemSessionStore, FakePrekeyStore)
 
 app/src/test/kotlin/com/aura/            (JVM + Robolectric)
-  pairing/PairingManagerTest.kt          transport/MessageSenderTest.kt
-  reaction/ReactionManagerTest.kt        disappearing/DisappearingManagerTest.kt
-  db/ContactEraserTest.kt                security/AppLockManagerTest.kt
-  call/CallManagerStateTest.kt           network/SyncEngineRoutingTest.kt
-  network/RendezvousVerifyTest.kt        pairing/QrPayloadTest.kt
-  transport/WireFramesTest.kt            streak/StreaksTest.kt
-  server/CheckinSigningTest.kt           settings/AuroraSettingsTest.kt[robolectric]
-  ui/*ViewModelTest.kt
-  testutil/ (fakes, MainDispatcherRule, TwoParty, FakeRendezvous)
-
-app/src/androidTest/kotlin/com/aura/     (device/emulator)
-  db/RoomDaoTest.kt        db/StoreAdapterConformanceTest.kt
-  db/MigrationTest.kt      backup/BackupRoundTripTest.kt
-  security/SecureWipeTest.kt  media/MediaStoreTest.kt
-  integration/PairAndMessageE2ETest.kt   (Hilt)
-  ui/*ScreenTest.kt        (Compose)
+  pairing/PairingCryptoTest.kt           pairing/PairingCryptoAttacks.kt
+  pairing/VerifyPairingTest.kt           security/AppLockTest.kt
+  security/SecureWipeTest.kt             backup/BackupsTest.kt
+  settings/AuroraSettingsBlocklistTest.kt  disappearing/DisappearingMessagesTest.kt
+  transport/SignalCodecAadTest.kt        transport/WireFramesTest.kt
+  db/ContactEraserTest.kt                db/RoomDaoTest.kt
+  db/StoreAdapterConformanceTest.kt      db/AuroraDatabaseMigrationTest.kt
+  media/EncryptedMediaStoreTest.kt       call/CallLogTest.kt
+  network/BackoffTest.kt                 network/TwoPeerRendezvousTest.kt
+  server/CheckinSigningTest.kt           streak/StreaksTest.kt
+  transport/rtc/RtcMediaChunkingTest.kt  transport/rtc/TwoPeerTransportTest.kt
+  sim/EndToEndPairMessageSimTest.kt      sim/PqxdhHandshakeSimTest.kt
+  testutil/ (TestIdentity, FakeStores, InMemoryRendezvous, InMemoryPeerTransport)
 ```
+
+> Still uncovered (known gaps, not yet written): `PairingCoordinator`/`Scanner`/`Receiver`
+> orchestration, `SyncEngine` routing, `CallController`/`RtcTransport` state machines, the real
+> `RendezvousClient` HTTP, and Compose UI/ViewModels. The sections below that describe these read
+> as a target, not current reality — treat [`TEST_STATUS.md`](TEST_STATUS.md) as the authoritative
+> coverage inventory.
 
 ---
 

@@ -27,21 +27,15 @@ import javax.inject.Singleton
  *   guessing.
  */
 @Singleton
-class AppLock @Inject constructor(
-    @ApplicationContext private val context: Context
+class AppLock internal constructor(
+    private val prefs: SharedPreferences,
+    /** Wall clock, injectable so the exponential-lockout logic is testable deterministically. */
+    private val now: () -> Long
 ) {
-    enum class UnlockResult { REAL, DECOY, WRONG, LOCKED_OUT }
+    /** Production entry point: PIN hashes live in EncryptedSharedPreferences (Keystore-backed). */
+    @Inject constructor(@ApplicationContext context: Context) : this(encryptedPrefs(context), { System.currentTimeMillis() })
 
-    private val prefs: SharedPreferences by lazy {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context, "aura_lock", masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
+    enum class UnlockResult { REAL, DECOY, WRONG, LOCKED_OUT }
 
     private val _locked = MutableStateFlow(isLockEnabled())
     val locked: StateFlow<Boolean> = _locked
@@ -80,9 +74,9 @@ class AppLock @Inject constructor(
     fun lock() { if (isLockEnabled()) _locked.value = true }
 
     fun tryUnlock(pin: String): UnlockResult {
-        val now = System.currentTimeMillis()
+        val nowMs = now()
         val until = prefs.getLong(KEY_LOCKED_UNTIL, 0L)
-        if (now < until) {
+        if (nowMs < until) {
             _lockoutUntil.value = until
             return UnlockResult.LOCKED_OUT
         }
@@ -101,7 +95,7 @@ class AppLock @Inject constructor(
                 UnlockResult.DECOY
             }
             else -> {
-                registerFailure(now)
+                registerFailure(nowMs)
                 UnlockResult.WRONG
             }
         }
@@ -145,6 +139,18 @@ class AppLock @Inject constructor(
     }
 
     private companion object {
+        /** The Keystore-backed encrypted store used in production. */
+        fun encryptedPrefs(context: Context): SharedPreferences {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context, "aura_lock", masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }
+
         const val KEY_SALT = "salt"
         const val KEY_REAL_HASH = "real_hash"
         const val KEY_DECOY_HASH = "decoy_hash"

@@ -46,7 +46,7 @@ dependencies {
     compileOnly("org.json:json:20240303")
 
     // ── Tests ────────────────────────────────────────────────────────────────
-    // All pure-JVM now (no native liboqs tier): Hkdf, SymmetricCipher, RatchetManager,
+    // All pure-JVM now (no native liboqs tier): Hkdf, SymmetricCipher, KemDoubleRatchet,
     // HybridKem (X-Wing), HybridSigner (ML-DSA), NodeIdentity, PrekeyManager, utils.
     testImplementation(kotlin("test-junit"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")

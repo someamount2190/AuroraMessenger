@@ -1,6 +1,7 @@
 package com.aura.sim
 
 import android.content.Context
+import android.util.Base64
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.aura.crypto.Hkdf
@@ -23,9 +24,11 @@ import com.aura.transport.rtc.InMemoryPeerTransport
 import com.aura.ux.MessagePulse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -138,6 +141,51 @@ class EndToEndPairMessageSimTest {
         assertEquals("hi back from bob", onAlice!!.body)
         assertFalse(onAlice.fromMe)
         assertEquals("delivered", bob.db.messageDao().byId("b1")!!.status)
+    }
+
+    // ── Negative paths (the server's drop/fail-closed logic, previously untested) ──────────────
+
+    private fun msgFrame(from: String, to: String, id: String, sealedB64: String) = JSONObject()
+        .put("t", "msg").put("from", from).put("to", to).put("id", id).put("sealed", sealedB64).put("ts", 100L)
+
+    @Test
+    fun frame_fromUnknownSender_isDropped_noAck_noStore() = runBlocking {
+        val frame = msgFrame("ee".repeat(32), bob.hex, "x", Base64.encodeToString(ByteArray(48), Base64.NO_WRAP))
+        assertNull("a frame from a non-contact must get no ack", bob.server.processFrame(frame))
+        assertNull("and must not be stored", bob.db.messageDao().byId("x"))
+    }
+
+    @Test
+    fun tamperedFrame_isRejected_wireIsOpaque_andRatchetNotBurned() = runBlocking {
+        val inner = JSONObject().put("body", "secret-plaintext").put("type", "text")
+        val aad = "aura-msg-v1|${alice.hex}|${bob.hex}".toByteArray()
+        val sealed = alice.kem.sealNext(bob.hex, inner.toString().toByteArray(), aad)!!
+
+        // Wire opacity: the plaintext never appears in the sealed bytes.
+        assertFalse("sealed frame must not leak plaintext",
+            String(sealed.bytes, Charsets.ISO_8859_1).contains("secret-plaintext"))
+
+        // A flipped byte fails AEAD → dropped, not stored, and (fail-closed) the chain isn't advanced.
+        val bad = sealed.bytes.copyOf().also { it[it.size - 1] = (it[it.size - 1].toInt() xor 1).toByte() }
+        assertNull(bob.server.processFrame(msgFrame(alice.hex, bob.hex, "t1", Base64.encodeToString(bad, Base64.NO_WRAP))))
+        assertNull(bob.db.messageDao().byId("t1"))
+
+        // The genuine frame still opens — the rejected tamper did not burn the ratchet step.
+        val ack = bob.server.processFrame(msgFrame(alice.hex, bob.hex, "t2", Base64.encodeToString(sealed.bytes, Base64.NO_WRAP)))
+        assertNotNull("genuine frame opens after the rejected tamper", ack)
+        assertEquals("secret-plaintext", bob.db.messageDao().byId("t2")!!.body)
+    }
+
+    @Test
+    fun retransmittedFrame_isReAckedIdempotently_notDoubleStored() = runBlocking {
+        val inner = JSONObject().put("body", "once").put("type", "text")
+        val aad = "aura-msg-v1|${alice.hex}|${bob.hex}".toByteArray()
+        val sealed = alice.kem.sealNext(bob.hex, inner.toString().toByteArray(), aad)!!
+        val frame = msgFrame(alice.hex, bob.hex, "dup", Base64.encodeToString(sealed.bytes, Base64.NO_WRAP))
+
+        assertNotNull(bob.server.processFrame(frame))                 // first delivery: stored + acked
+        assertNotNull("a retransmit after a lost ack must re-ack", bob.server.processFrame(frame))
+        assertEquals("stored exactly once", 1, bob.db.messageDao().allForBackup().count { it.id == "dup" })
     }
 
     private fun inMemoryDb(ctx: Context): AuroraDatabase =

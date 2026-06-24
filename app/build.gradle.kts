@@ -42,9 +42,8 @@ android {
     buildTypes {
         release {
             // Pre-release: signed, non-debuggable, but NOT code-shrunk. The PQ
-            // crypto stack (liboqs JNI + BouncyCastle) and Room/Hilt are heavily
-            // reflective/native; R8 is deferred until keep rules are validated.
-            // (R8 wouldn't shrink the APK much anyway — its weight is native .so.)
+            // crypto stack (BouncyCastle) and Room/Hilt are heavily reflective;
+            // R8 is deferred until keep rules are validated.
             isMinifyEnabled = false
             versionNameSuffix = "-pre"
             if (keystorePropsFile.exists()) {
@@ -155,9 +154,12 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.12.2")
     testImplementation("androidx.test:core:1.5.0")
     testImplementation("app.cash.turbine:turbine:1.1.0")
+    // mockk — for orchestration classes whose collaborators are concrete (network/Keystore-bound)
+    // and can't be driven with real instances under Robolectric.
+    testImplementation("io.mockk:mockk:1.13.13")
+    // Room migration testing runs under Robolectric in the unit-test source set (CI-gated).
+    testImplementation("androidx.room:room-testing:2.6.1")
     androidTestImplementation("androidx.room:room-testing:2.6.1")
-    // Instrumented tests — run on an emulator/device where liboqs jniLibs are present,
-    // so the native Kyber/Dilithium attack vectors actually execute.
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test:runner:1.5.2")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")

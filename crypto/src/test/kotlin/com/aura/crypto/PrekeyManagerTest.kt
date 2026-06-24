@@ -5,6 +5,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -79,5 +80,56 @@ class PrekeyManagerTest {
         assertTrue(store.records.isNotEmpty())
         pm.wipeAll()
         assertTrue(store.records.isEmpty())
+    }
+
+    // ── Time-driven SPK rotation / pruning (injected clock) ─────────────────────
+
+    @Test fun spk_rotatesOnlyAfterRotationWindow() = runTest {
+        val store = FakePrekeyStore()
+        var clock = 1_000_000L
+        val pm = PrekeyManager(store, kem, signer) { clock }
+        val id = gen.generate().getOrThrow()
+
+        pm.publicBundle(id)
+        val firstSpk = store.currentSpk()!!.prekeyId
+
+        clock += PrekeyManager.SPK_ROTATE_MS - 1            // still inside the window
+        pm.publicBundle(id)
+        assertEquals(firstSpk, store.currentSpk()!!.prekeyId, "SPK must not rotate before the window")
+
+        clock += 2                                          // now past SPK_ROTATE_MS since creation
+        pm.publicBundle(id)
+        assertNotEquals(firstSpk, store.currentSpk()!!.prekeyId, "SPK must rotate after the window")
+    }
+
+    @Test fun oldSpk_prunedAfterRotateGraceWindow() = runTest {
+        val store = FakePrekeyStore()
+        var clock = 1_000_000L
+        val pm = PrekeyManager(store, kem, signer) { clock }
+        val id = gen.generate().getOrThrow()
+
+        pm.publicBundle(id)
+        val oldSpk = store.currentSpk()!!.prekeyId
+
+        clock += PrekeyManager.SPK_ROTATE_MS + PrekeyManager.SPK_GRACE_MS + 1
+        pm.publicBundle(id)                                 // rotates AND prunes past rotate+grace
+        assertNull(store.byId(oldSpk), "an SPK older than rotate+grace must be pruned")
+        assertNotNull(store.currentSpk(), "a fresh SPK survives")
+    }
+
+    @Test fun opkPool_replenishesAfterConsumption() = runTest {
+        val store = FakePrekeyStore()
+        val pm = PrekeyManager(store, kem, signer)
+        val id = gen.generate().getOrThrow()
+
+        pm.publicBundle(id)
+        assertEquals(PrekeyManager.OPK_POOL_TARGET, store.unusedOpkCount())
+
+        val spkId = store.currentSpk()!!.prekeyId
+        store.unusedOpks(5).forEach { pm.consume(spkId, it.prekeyId) }   // delete-on-use
+        assertEquals(PrekeyManager.OPK_POOL_TARGET - 5, store.unusedOpkCount())
+
+        pm.publicBundle(id)                                              // refills back to target
+        assertEquals(PrekeyManager.OPK_POOL_TARGET, store.unusedOpkCount())
     }
 }

@@ -30,8 +30,9 @@ class FakePrekeyStore : PrekeyStore {
     override suspend fun currentSpk(): PrekeyRecord? =
         records.values.filter { it.kind == "spk" }.maxByOrNull { it.createdAtMs }
 
+    // Oldest-first, matching the Room query `... ORDER BY createdAtMs ASC LIMIT :n`.
     override suspend fun unusedOpks(n: Int): List<PrekeyRecord> =
-        records.values.filter { it.kind == "opk" }.take(n)
+        records.values.filter { it.kind == "opk" }.sortedBy { it.createdAtMs }.take(n)
 
     override suspend fun unusedOpkCount(): Int = records.values.count { it.kind == "opk" }
 

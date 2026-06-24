@@ -39,7 +39,9 @@ import java.security.SecureRandom
 class PrekeyManager(
     private val store: PrekeyStore,
     private val kem: HybridKem,
-    private val signer: HybridSigner
+    private val signer: HybridSigner,
+    /** Wall clock, injectable so SPK rotation / pruning can be driven deterministically in tests. */
+    private val now: () -> Long = { System.currentTimeMillis() }
 ) {
     private val rng = SecureRandom()
     private val mutex = Mutex()
@@ -62,7 +64,7 @@ class PrekeyManager(
     suspend fun publicBundle(identity: NodeIdentity): JSONObject = mutex.withLock {
         ensureSpkLocked()
         replenishOpksLocked(OPK_POOL_TARGET)
-        store.pruneOldSpks(System.currentTimeMillis() - (SPK_ROTATE_MS + SPK_GRACE_MS))
+        store.pruneOldSpks(now() - (SPK_ROTATE_MS + SPK_GRACE_MS))
         val nodeId = identity.nodeId.toHex()
         val spk = store.currentSpk() ?: error("SPK missing after ensure")
         val opks = store.unusedOpks(OPK_PUBLISH_COUNT)
@@ -93,7 +95,7 @@ class PrekeyManager(
 
     private suspend fun ensureSpkLocked() {
         val cur = store.currentSpk()
-        if (cur == null || System.currentTimeMillis() - cur.createdAtMs >= SPK_ROTATE_MS) {
+        if (cur == null || now() - cur.createdAtMs >= SPK_ROTATE_MS) {
             generateLocked(KIND_SPK)
         }
     }
@@ -111,7 +113,7 @@ class PrekeyManager(
                 kind        = kind,
                 kemPubB64   = b64(kp.publicKey.encoded),
                 kemPrivB64  = b64(kp.privateKey.encoded),
-                createdAtMs = System.currentTimeMillis()
+                createdAtMs = now()
             )
         )
     }

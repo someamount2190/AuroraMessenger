@@ -7,13 +7,13 @@ Last updated: 2026-06-23 (post crypto re-engineering — pure-JVM, no liboqs/nat
 
 | | Verified green | Skipped |
 |---|---|---|
-| `crypto` module | **129** | 0 |
-| `app` module | **81** | 0 |
-| **Total** | **210** | 0 |
+| `crypto` module | **146** | 0 |
+| `app` module | **110** | 0 |
+| **Total** | **256** | 0 |
 
 Run (both pure-JVM/Robolectric, no native deps, CI-friendly):
-- `./gradlew -p crypto test` → 129 pass.
-- `./gradlew :app:testDebugUnitTest` → 81 pass.
+- `./gradlew -p crypto test` → 146 pass.
+- `./gradlew :app:testDebugUnitTest` → 110 pass.
 
 ## Crypto — all pure-JVM now ✅
 
@@ -38,22 +38,31 @@ runs on CI; there is no longer a device-only "native" tier or any `assumeTrue` s
 
 ## App ✅
 
-- **Storage** (Robolectric + in-memory Room): `RoomDaoTest` (incl. the `kem_ratchet`
-  backup/load/delete round-trip), `StoreAdapterConformanceTest`.
+- **Storage / migrations** (Robolectric + in-memory Room): `RoomDaoTest` (incl. the `kem_ratchet`
+  backup/load/delete round-trip), `StoreAdapterConformanceTest` (fake↔Room incl. OPK ordering),
+  `AuroraDatabaseMigrationTest` (7→8 / 8→9 / 9→10 data-preservation, run against the real
+  `Migration` objects).
+- **Security orchestration** (Robolectric + mockk): `VerifyPairingTest` (SAS attempt-limit →
+  blocklist → cryptographic wipe), `SecureWipeTest` (every collaborator invoked; one failure
+  doesn't abort the rest), `AppLockTest` (real vs decoy PIN, exponential lockout — via a
+  prefs/clock seam), `BackupsTest` (passphrase round-trip, wrong-passphrase fail-closed),
+  `AuroraSettingsBlocklistTest`, `DisappearingMessagesTest` (expiry stamping + purge incl. media),
+  `SignalCodecAadTest` (call vs RTC AEAD domain separation on the shared ratchet).
 - **Integration sims** (Robolectric): `EndToEndPairMessageSimTest` (real MessageSender +
-  TcpMessageServer over the in-memory transport, driving the live KEM ratchet),
+  TcpMessageServer over the in-memory transport, driving the live KEM ratchet — now incl.
+  unknown-sender drop, tamper rejection, wire opacity, idempotent re-ack),
   `PqxdhHandshakeSimTest` (the real X-Wing PQXDH handshake — both peers derive the same root),
   plus the two-peer rendezvous/transport sims.
-- **Security/pure-logic:** `MediaStoreTest`, `ContactEraserTest`, `WireFramesTest`,
+- **Security/pure-logic:** `EncryptedMediaStoreTest`, `ContactEraserTest`, `WireFramesTest`,
   `StreaksTest`, `CheckinSigningTest` (the signing-string contract shared with the Node server).
 
 ## Pending — device/UI only ⛔
 
 Still best authored on an emulator (Hilt graph / Compose / real Keystore), not a JVM sandbox:
-ViewModel (Turbine) + Compose UI tests, the Keystore-backed `SecureWipe` / `Backups` round-trip,
-and an on-device end-to-end capstone (pair → verify → text → media → delete). The optional
-`androidTest` crypto demo/attack suite validates the (now pure-JVM) primitives under the real
-Android runtime.
+ViewModel (Turbine) + Compose UI tests, the `PairingCoordinator`/`Scanner`/`Receiver`
+orchestration, `SyncEngine` routing, the `CallController`/`RtcTransport` state machines, the real
+`RendezvousClient` HTTP, and an on-device end-to-end capstone (pair → verify → text → media →
+delete).
 
 ## Infra added
 - `crypto/build.gradle.kts`: `kotlin-test-junit`, `kotlinx-coroutines-test`, `org.json` (test).

@@ -6,7 +6,7 @@ rootProject.name = "aura-crypto"
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
-        // liboqs-java is vendored in the repo's local Maven dir.
+        // The published aura-crypto artifact lives in the repo's local Maven dir.
         maven { url = uri(rootProject.projectDir.resolve("../libs/maven")) }
         mavenCentral()
         maven { url = uri("https://jitpack.io") }

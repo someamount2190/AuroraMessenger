@@ -91,7 +91,7 @@ class DisappearingMessages @Inject constructor(
         runCatching { messageSender.sendControl(contact, payload) }
     }
 
-    private suspend fun purgeExpired() {
+    internal suspend fun purgeExpired() {
         val now = System.currentTimeMillis()
         val expired = messageDao.expired(now)
         if (expired.isEmpty()) return

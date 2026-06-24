@@ -1,5 +1,9 @@
 package com.aura.crypto
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -153,6 +157,33 @@ class KemRatchetManagerTest {
         val a = manager()
         assertNull(a.sasCodeFor("nobody", "x"))
         assertNull(a.mediaKey("nobody"))
+    }
+
+    /**
+     * The per-contact mutex must serialize concurrent seals: 50 seals fired in parallel on the
+     * same contact must each get a distinct message number (no lost ratchet step / counter reuse)
+     * and every frame must still open exactly once on the peer. Removing `withLock` fails this.
+     */
+    @Test fun concurrentSeals_sameContact_noLostUpdates() = runBlocking {
+        val a = manager(); val b = manager()
+        a.seed(BOB, ROOT.copyOf(), iAmInitiator = true)
+        b.seed(ALICE, ROOT.copyOf(), iAmInitiator = false)
+        val n = 50
+
+        val sealed = coroutineScope {
+            (0 until n).map { i ->
+                async(Dispatchers.Default) { a.sealNext(BOB, "m$i".toByteArray(), aad)!! }
+            }.awaitAll()
+        }
+        assertEquals(n, sealed.map { it.n }.toSet().size, "every concurrent seal needs a distinct counter")
+
+        val seen = HashSet<String>()
+        for (s in sealed) {
+            val pt = b.open(ALICE, s.bytes, aad)
+            assertNotNull(pt, "every concurrently-sealed frame must open on the peer")
+            assertTrue(seen.add(String(pt)), "no two frames decrypt to the same plaintext")
+        }
+        assertEquals(n, seen.size)
     }
 
     /**

@@ -1,8 +1,6 @@
 package com.aura.crypto
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
-import org.junit.runner.RunWith
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -10,20 +8,19 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Instrumented adversarial suite for the NATIVE post-quantum primitives. Runs on a
- * device/emulator where the liboqs `.so` is present, so Kyber-1024 and Dilithium-3
- * actually execute. Each test mounts a known attack vector and asserts it is defeated.
- *
- * Run: `./gradlew :app:connectedDebugAndroidTest` (an unlocked emulator must be attached).
+ * Adversarial suite for the hybrid post-quantum primitives (X-Wing KEM + ML-DSA/Ed25519
+ * signatures). The stack is pure-JVM (BouncyCastle), so this runs in the normal JVM CI — it
+ * was previously an instrumented `androidTest` (a relic of the retired liboqs JNI tier) and
+ * therefore never executed in CI. Each test mounts a known attack vector and asserts it is
+ * defeated; a green run means the attack was beaten, a failure is a real finding.
  */
-@RunWith(AndroidJUnit4::class)
-class NativeCryptoAttacksTest {
+class HybridCryptoAttacksTest {
 
     private val hkdf = Hkdf()
     private val kem = HybridKem()
     private val signer = HybridSigner()
 
-    // ── Sanity: the native primitives work at all ───────────────────────────────
+    // ── Sanity: the primitives agree at all ─────────────────────────────────────
     @Test fun kem_roundTrip_agrees() = runBlocking {
         val kp = kem.generateKeyPair().getOrThrow()
         val enc = kem.encapsulate(kp.publicKey).getOrThrow()
@@ -35,7 +32,6 @@ class NativeCryptoAttacksTest {
     @Test fun kem_partialBreak_mlkemRegion_divergesSecret() = runBlocking {
         val kp = kem.generateKeyPair().getOrThrow()
         val enc = kem.encapsulate(kp.publicKey).getOrThrow()
-        // Corrupt the leading ML-KEM-768 region of the X-Wing ciphertext.
         val bad = HybridCiphertext(
             enc.ciphertext.encoded.copyOf().also { it[0] = (it[0].toInt() xor 0x01).toByte() }
         )
@@ -46,7 +42,6 @@ class NativeCryptoAttacksTest {
     @Test fun kem_partialBreak_x25519Region_divergesSecret() = runBlocking {
         val kp = kem.generateKeyPair().getOrThrow()
         val enc = kem.encapsulate(kp.publicKey).getOrThrow()
-        // Corrupt the trailing X25519 ephemeral-key region of the X-Wing ciphertext.
         val ct = enc.ciphertext.encoded
         val bad = HybridCiphertext(
             ct.copyOf().also { it[ct.size - 1] = (it[ct.size - 1].toInt() xor 0x01).toByte() }
@@ -74,7 +69,7 @@ class NativeCryptoAttacksTest {
         val kp = signer.generateSigningKeyPair().getOrThrow()
         val msg = "authorize".toByteArray()
         val sig = signer.sign(msg, kp.privateKey).getOrThrow()
-        sig[10] = (sig[10].toInt() xor 0x01).toByte()   // corrupt the Dilithium region
+        sig[10] = (sig[10].toInt() xor 0x01).toByte()   // corrupt the ML-DSA region
         assertFalse(signer.verifyHybridSync(msg, sig, kp.publicKey))
         assertTrue(signer.verify(msg, sig, kp.publicKey).isFailure)
         // the Ed25519 half is still valid → proves only the PQ half was broken yet verify fails
