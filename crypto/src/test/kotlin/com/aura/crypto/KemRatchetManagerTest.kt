@@ -177,8 +177,12 @@ class KemRatchetManagerTest {
         }
         assertEquals(n, sealed.map { it.n }.toSet().size, "every concurrent seal needs a distinct counter")
 
+        // Open in counter order: the property under test is that the mutex serialized the seals so
+        // none was lost (distinct counters, all 50 decrypt). Out-of-order receipt is covered
+        // separately by outOfOrder_andReplay; replaying that here just stresses the skip cache by a
+        // thread-count-dependent amount, which isn't what this test is about.
         val seen = HashSet<String>()
-        for (s in sealed) {
+        for (s in sealed.sortedBy { it.n }) {
             val pt = b.open(ALICE, s.bytes, aad)
             assertNotNull(pt, "every concurrently-sealed frame must open on the peer")
             assertTrue(seen.add(String(pt)), "no two frames decrypt to the same plaintext")
