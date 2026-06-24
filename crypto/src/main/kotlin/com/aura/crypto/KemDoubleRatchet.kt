@@ -76,6 +76,15 @@ class KemDoubleRatchet(
         )
 
         internal fun replaceWith(o: Session) {
+            // Zeroize the secret material we're dropping before swapping in the committed copy.
+            // decrypt() builds `o` via deepCopy(), so these originals are distinct buffers from o's
+            // and are safe to wipe; the `!==` guards keep that true even if a caller ever passed a
+            // self/aliasing copy. (skipped values ARE shared with o by deepCopy — they're wiped when
+            // consumed, not here.) Upholds the ratchet's forward-secrecy wipe discipline.
+            if (rootKey !== o.rootKey) rootKey.fill(0)
+            if (sendChainKey !== o.sendChainKey) sendChainKey?.fill(0)
+            if (recvChainKey !== o.recvChainKey) recvChainKey?.fill(0)
+            if (selfPriv !== o.selfPriv) selfPriv?.encoded?.fill(0)
             rootKey = o.rootKey; sendChainKey = o.sendChainKey; recvChainKey = o.recvChainKey
             ns = o.ns; nr = o.nr; pn = o.pn
             selfPriv = o.selfPriv; selfPub = o.selfPub; peerPub = o.peerPub
@@ -127,6 +136,7 @@ class KemDoubleRatchet(
             val (rk, ck) = kdfRoot(s.rootKey, enc.sharedSecret)
             enc.sharedSecret.fill(0)
             s.rootKey.fill(0); s.rootKey = rk
+            s.sendChainKey?.fill(0)            // wipe the prior epoch's final send-chain key (FS)
             s.sendChainKey = ck
             s.pn = s.ns; s.ns = 0
             s.sendStepNeeded = false

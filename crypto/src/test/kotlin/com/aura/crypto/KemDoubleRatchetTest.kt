@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -200,5 +201,35 @@ class KemDoubleRatchetTest {
         assertEquals(false, bob.sendStepNeeded)
         assertNotNull(alice.peerPub)
         assertNull(bob.peerPub)
+    }
+
+    // ── Forward-secrecy zeroization: dropped key material must be wiped, not left for the GC ──
+
+    private fun ByteArray.isAllZero() = all { it == 0.toByte() }
+
+    /** A sending ratchet step must zeroize the previous epoch's final send-chain key. */
+    @Test fun sendStep_zeroizesPriorSendChainKey() = runBlocking {
+        val (alice, bob) = pair()
+        dr.decrypt(bob, dr.encrypt(alice, "m0".toByteArray()))   // Alice's first send establishes an epoch
+        dr.decrypt(alice, dr.encrypt(bob, "r0".toByteArray()))   // Bob replies → Alice now owes a step
+        val priorChain = alice.sendChainKey
+        assertNotNull(priorChain, "precondition: a live send-chain key exists before the step")
+        assertFalse(priorChain!!.isAllZero(), "precondition: the chain key is non-zero")
+
+        dr.encrypt(alice, "m1".toByteArray())                    // takes the step branch
+
+        assertTrue(priorChain.isAllZero(), "the prior send-chain key must be zeroized on the step")
+    }
+
+    /** A receiving ratchet step commits via replaceWith, which must zeroize the old root key. */
+    @Test fun receiveStep_zeroizesReplacedRootKey() = runBlocking {
+        val (alice, bob) = pair()
+        val m0 = dr.encrypt(alice, "m0".toByteArray())           // carries the KEM step ciphertext
+        val bobRootBefore = bob.rootKey
+        assertFalse(bobRootBefore.isAllZero(), "precondition: root key is non-zero")
+
+        dr.decrypt(bob, m0)                                      // receiving step → root steps → commit
+
+        assertTrue(bobRootBefore.isAllZero(), "the replaced root key must be zeroized on commit")
     }
 }
