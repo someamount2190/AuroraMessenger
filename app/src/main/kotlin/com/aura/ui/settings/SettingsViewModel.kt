@@ -38,6 +38,7 @@ class SettingsViewModel @Inject constructor(
 
     /** Restore from a backup blob; on success the app hard-exits so the restored identity loads. */
     fun restoreBackup(bytes: ByteArray, passphrase: String) {
+        if (appLockManager.decoyActive.value) return   // decoy: no identity-altering actions
         viewModelScope.launch {
             backupManager.import(bytes, passphrase.toCharArray())
                 .onSuccess { secureWipe.exitProcess() }
@@ -51,9 +52,11 @@ class SettingsViewModel @Inject constructor(
     val isRooted: Boolean by lazy { RootDetector.isLikelyRooted() }
 
     fun lockEnabled(): Boolean = appLockManager.isLockEnabled()
-    fun setPin(pin: String) = appLockManager.setPin(pin)
-    fun setDecoyPin(pin: String) = appLockManager.setDecoyPin(pin)
-    fun disableLock() = appLockManager.disableLock()
+    // PIN/lock changes are blocked under decoy so a coercer can't lock out the real owner
+    // (change the real PIN) or tear down the lock while holding only the decoy PIN.
+    fun setPin(pin: String) { if (!appLockManager.decoyActive.value) appLockManager.setPin(pin) }
+    fun setDecoyPin(pin: String) { if (!appLockManager.decoyActive.value) appLockManager.setDecoyPin(pin) }
+    fun disableLock() { if (!appLockManager.decoyActive.value) appLockManager.disableLock() }
 
     fun setThemeMode(mode: ThemeMode) = settings.setThemeMode(mode)
     fun setThemePalette(palette: ThemePalette) = settings.setThemePalette(palette)
@@ -113,6 +116,7 @@ class SettingsViewModel @Inject constructor(
      * than deleting rows. The app closes; relaunch generates a fresh identity.
      */
     fun clearAllData() {
+        if (appLockManager.decoyActive.value) return   // decoy: don't let a coercer wipe the real data
         viewModelScope.launch {
             serverController.stop()
             secureWipe.wipeEverything()

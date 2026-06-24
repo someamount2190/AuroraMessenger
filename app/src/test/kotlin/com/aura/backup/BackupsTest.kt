@@ -16,6 +16,7 @@ import com.aura.db.ContactEntity
 import com.aura.db.KemRatchetEntity
 import com.aura.db.MessageEntity
 import com.aura.identity.IdentityStore
+import com.aura.security.AppLock
 import io.mockk.coEvery
 import io.mockk.coJustRun
 import io.mockk.coVerify
@@ -33,6 +34,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -74,13 +76,13 @@ class BackupsTest {
         val exporter = mockk<IdentityStore>()
         coEvery { exporter.getOrCreate() } returns genId
         val blob = Backups(exporter, srcDb.contactDao(), srcDb.messageDao(), srcDb.ratchetDao(),
-            cipher, Dispatchers.Unconfined).export("correct horse".toCharArray())
+            cipher, freshAppLock(), Dispatchers.Unconfined).export("correct horse".toCharArray())
 
         val restored = slot<NodeIdentity>()
         val importer = mockk<IdentityStore>()
         coJustRun { importer.restore(capture(restored)) }
         val result = Backups(importer, tgtDb.contactDao(), tgtDb.messageDao(), tgtDb.ratchetDao(),
-            cipher, Dispatchers.Unconfined).import(blob, "correct horse".toCharArray())
+            cipher, freshAppLock(), Dispatchers.Unconfined).import(blob, "correct horse".toCharArray())
 
         assertTrue(result.isSuccess, "round-trip import must succeed")
         // Deep identity check — nodeId alone is unaffected by a swapped/dropped key field, so the
@@ -104,12 +106,12 @@ class BackupsTest {
         seedSource()
         val exporter = mockk<IdentityStore>(); coEvery { exporter.getOrCreate() } returns genId
         val v3 = Backups(exporter, srcDb.contactDao(), srcDb.messageDao(), srcDb.ratchetDao(),
-            cipher, Dispatchers.Unconfined).export("pw".toCharArray())
+            cipher, freshAppLock(), Dispatchers.Unconfined).export("pw".toCharArray())
         val v2 = rewriteInnerVersion(v3, "pw", to = 2)   // the old format whose KEM blobs are incompatible
 
         val importer = mockk<IdentityStore>(relaxed = true)
         val result = Backups(importer, tgtDb.contactDao(), tgtDb.messageDao(), tgtDb.ratchetDao(),
-            cipher, Dispatchers.Unconfined).import(v2, "pw".toCharArray())
+            cipher, freshAppLock(), Dispatchers.Unconfined).import(v2, "pw".toCharArray())
 
         assertTrue(result.isSuccess)
         assertNotNull(tgtDb.contactDao().byNodeId(node), "v2 still restores contacts")
@@ -122,11 +124,11 @@ class BackupsTest {
         val exporter = mockk<IdentityStore>()
         coEvery { exporter.getOrCreate() } returns genId
         val blob = Backups(exporter, srcDb.contactDao(), srcDb.messageDao(), srcDb.ratchetDao(),
-            cipher, Dispatchers.Unconfined).export("right".toCharArray())
+            cipher, freshAppLock(), Dispatchers.Unconfined).export("right".toCharArray())
 
         val importer = mockk<IdentityStore>(relaxed = true)
         val result = Backups(importer, tgtDb.contactDao(), tgtDb.messageDao(), tgtDb.ratchetDao(),
-            cipher, Dispatchers.Unconfined).import(blob, "WRONG".toCharArray())
+            cipher, freshAppLock(), Dispatchers.Unconfined).import(blob, "WRONG".toCharArray())
 
         assertTrue(result.isFailure, "a wrong passphrase must not decrypt")
         // Fail CLOSED: nothing decrypted ⇒ nothing written. (Guards against a future reorder that
@@ -135,11 +137,36 @@ class BackupsTest {
         coVerify(exactly = 0) { importer.restore(any()) }
     }
 
+    @Test fun export_underDecoy_refuses() = runBlocking {
+        // Decoy mode must expose no real data: a backup reads the raw DAOs + identity, so it must
+        // refuse while the app was unlocked with the decoy PIN (else it exfiltrates everything).
+        seedSource()
+        val exporter = mockk<IdentityStore>(relaxed = true)
+        val backups = Backups(exporter, srcDb.contactDao(), srcDb.messageDao(), srcDb.ratchetDao(),
+            cipher, decoyActiveLock(), Dispatchers.Unconfined)
+        assertFailsWith<IllegalStateException> { backups.export("pw".toCharArray()) }
+        assertTrue(true, "export must throw under decoy, not return real data")  // keep test method Unit-typed
+    }
+
     @Test fun import_foreignBlob_fails() = runBlocking {
         val importer = mockk<IdentityStore>(relaxed = true)
         val result = Backups(importer, tgtDb.contactDao(), tgtDb.messageDao(), tgtDb.ratchetDao(),
-            cipher, Dispatchers.Unconfined).import("not an aurora backup".toByteArray(), "x".toCharArray())
+            cipher, freshAppLock(), Dispatchers.Unconfined).import("not an aurora backup".toByteArray(), "x".toCharArray())
         assertTrue(result.isFailure, "a non-Aurora file must be rejected")
+    }
+
+    // ── helpers: AppLock instances (real internal seam, no Keystore) ────────────────────────────
+
+    private var lockCounter = 0
+    private fun lockPrefs() = ctx.getSharedPreferences("backup_lock_${lockCounter++}", Context.MODE_PRIVATE)
+
+    /** A lock with decoy NOT active (default) — exports allowed. */
+    private fun freshAppLock(): AppLock = AppLock(lockPrefs()) { 1_000L }
+
+    /** A lock currently unlocked with the DECOY pin — exports must be refused. */
+    private fun decoyActiveLock(): AppLock = AppLock(lockPrefs()) { 1_000L }.apply {
+        setPin("1234"); setDecoyPin("9999")
+        check(tryUnlock("9999") == AppLock.UnlockResult.DECOY) { "decoy unlock should have flagged decoyActive" }
     }
 
     // ── helpers: reconstruct the backup container to forge an old-version (v2) backup ───────────

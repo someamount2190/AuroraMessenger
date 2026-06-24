@@ -41,11 +41,13 @@ import com.aura.db.ContactEntity
 import com.aura.db.MessageDao
 import com.aura.db.MessageEntity
 import com.aura.media.MediaTransfer
+import com.aura.security.AppLock
 import com.aura.share.ShareIntentBus
 import com.aura.transport.MessageSender
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -57,10 +59,13 @@ class ShareViewModel @Inject constructor(
     private val messageDao: MessageDao,
     private val mediaTransfer: MediaTransfer,
     private val messageSender: MessageSender,
-    private val shareIntentBus: ShareIntentBus
+    private val shareIntentBus: ShareIntentBus,
+    appLock: AppLock
 ) : ViewModel() {
 
+    // Decoy mode: present no contacts to share to (mirrors HomeViewModel's gate).
     val contacts: StateFlow<List<ContactEntity>> = contactDao.observeAll()
+        .combine(appLock.decoyActive) { list, decoy -> if (decoy) emptyList() else list }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val pending = shareIntentBus.pending

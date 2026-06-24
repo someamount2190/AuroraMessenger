@@ -65,32 +65,36 @@ class VerifyPairing @Inject constructor(
 
         // The peer shows the code bound to THEIR identity; we compute the same locally.
         val expected = kemRatchet.sasCodeFor(contactNodeIdHex, contactNodeIdHex) ?: return@runCatching false
-        if (!pairingCrypto.sasEquals(code.trim(), expected)) {
-            contactDao.incVerifyAttempts(contactNodeIdHex)
-            val attempts = contactDao.byNodeId(contactNodeIdHex)?.verifyAttempts ?: 0
-            if (attempts >= MAX_VERIFY_ATTEMPTS) {
-                settings.blockNode(contactNodeIdHex)
-                eraser.wipe(contactNodeIdHex)
-                events.emit(PairEvent.Failed(contactNodeIdHex))
-            }
-            return@runCatching false
-        }
+        val codeMatches = pairingCrypto.sasEquals(code.trim(), expected)
 
         lockFor(contactNodeIdHex).withLock {
-            // Re-read under the lock: handlePairVerify may have set theyVerified since the
-            // SAS check above. Whichever of the two transitions runs second sees the other's
-            // flag and flips to ACTIVE instead of clobbering it back to VERIFY.
+            // Everything that reads-then-writes the verify flags runs under the lock and re-reads
+            // the row first, so a concurrent handlePairVerify can't be clobbered — and, critically,
+            // the wrong-code blocklist+wipe can't destroy a contact that the peer's pairverify just
+            // activated (which would also blocklist the honest peer).
             val fresh = contactDao.byNodeId(contactNodeIdHex) ?: return@runCatching false
-            when (fresh.pairState) {
-                PairState.VERIFY -> if (fresh.theyVerified) {
-                    contactDao.setVerify(contactNodeIdHex, iv = true, tv = true, state = PairState.ACTIVE)
-                    events.activated(contactNodeIdHex)
-                    bootstrapIfInitiator(contactNodeIdHex)
-                } else {
-                    contactDao.setVerify(contactNodeIdHex, iv = true, tv = false, state = PairState.VERIFY)
+            if (fresh.pairState == PairState.ACTIVE) return@runCatching true   // already mutually verified
+            if (fresh.pairState != PairState.VERIFY) return@runCatching false
+
+            if (!codeMatches) {
+                contactDao.incVerifyAttempts(contactNodeIdHex)
+                val attempts = contactDao.byNodeId(contactNodeIdHex)?.verifyAttempts ?: 0
+                if (attempts >= MAX_VERIFY_ATTEMPTS) {
+                    settings.blockNode(contactNodeIdHex)
+                    eraser.wipe(contactNodeIdHex)
+                    events.emit(PairEvent.Failed(contactNodeIdHex))
                 }
-                PairState.ACTIVE -> { /* already activated by the peer's concurrent pairverify */ }
-                else -> return@runCatching false
+                return@runCatching false
+            }
+
+            // Re-read theyVerified under the lock: whichever transition runs second sees the
+            // other's flag and flips to ACTIVE instead of clobbering it back to VERIFY.
+            if (fresh.theyVerified) {
+                contactDao.setVerify(contactNodeIdHex, iv = true, tv = true, state = PairState.ACTIVE)
+                events.activated(contactNodeIdHex)
+                bootstrapIfInitiator(contactNodeIdHex)
+            } else {
+                contactDao.setVerify(contactNodeIdHex, iv = true, tv = false, state = PairState.VERIFY)
             }
         }
         pairingSignal.sendSimple("pairverify", myNodeIdHex, contactNodeIdHex, identity)

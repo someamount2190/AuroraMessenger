@@ -45,6 +45,7 @@ class AuroraRendezvousServer(
     private val prekeyDir = PrekeyDirectory(PREKEY_OPK_MAX)
     private val findLimiter = IpRateLimiter(FIND_RATE_LIMIT_PER_MIN)
     private val signalPostLimiter = IpRateLimiter(SIGNAL_POST_RATE_LIMIT_PER_MIN)
+    private val prekeyFetchLimiter = IpRateLimiter(PREKEY_FETCH_RATE_LIMIT_PER_MIN)
     private val rng = SecureRandom()
 
     val registeredNodeCount: Int
@@ -75,8 +76,13 @@ class AuroraRendezvousServer(
                 session.method == Method.POST && uri.startsWith("/prekeys/") ->
                     handlePrekeyPublish(uri.removePrefix("/prekeys/"), session)
 
-                session.method == Method.GET && uri.startsWith("/prekeys/") ->
-                    handlePrekeyFetch(uri.removePrefix("/prekeys/"))
+                session.method == Method.GET && uri.startsWith("/prekeys/") -> {
+                    // Each fetch pops a one-time prekey; rate-limit so a caller can't drain the
+                    // pool and force handshakes down to the reused signed prekey.
+                    if (!prekeyFetchLimiter.allow(session.remoteIpAddress ?: "?"))
+                        jsonError(Response.Status.TOO_MANY_REQUESTS, "rate limited")
+                    else handlePrekeyFetch(uri.removePrefix("/prekeys/"))
+                }
 
                 session.method == Method.GET && uri == "/source" ->
                     // AGPL-3.0 §13: point remote users at the Corresponding Source.
@@ -344,6 +350,7 @@ class AuroraRendezvousServer(
         const val CHECKIN_RATE_LIMIT_MS = 60 * 1000L
         const val FIND_RATE_LIMIT_PER_MIN = 10
         const val SIGNAL_POST_RATE_LIMIT_PER_MIN = 30
+        const val PREKEY_FETCH_RATE_LIMIT_PER_MIN = 30
         const val MAX_QUEUE_LEN = 64
         const val CANDIDATE_COUNT = 10
         /** Cap on one-time prekeys retained per node (bounds memory). */

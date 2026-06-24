@@ -17,6 +17,7 @@ import com.aura.db.MessageEntity
 import com.aura.db.RatchetDao
 import com.aura.di.IoDispatcher
 import com.aura.identity.IdentityStore
+import com.aura.security.AppLock
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -47,10 +48,15 @@ class Backups @Inject constructor(
     private val messageDao: MessageDao,
     private val ratchetDao: RatchetDao,
     private val cipher: SymmetricCipher,
+    private val appLock: AppLock,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     /** Build an encrypted backup blob (the bytes the caller writes to a user-chosen file). */
     suspend fun export(passphrase: CharArray): ByteArray = withContext(ioDispatcher) {
+        // Decoy mode must expose NO real data. A backup reads the raw DAOs + identity, bypassing
+        // the ViewModel-level decoy filtering, so a coercer given the decoy PIN could otherwise
+        // exfiltrate everything via Settings → Backup. Refuse while decoy is active.
+        check(!appLock.decoyActive.value) { "backup unavailable" }
         val identity = identityManager.getOrCreate()
         val inner = JSONObject()
             .put("v", DATA_VERSION)

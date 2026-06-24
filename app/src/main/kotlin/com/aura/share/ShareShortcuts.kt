@@ -10,12 +10,14 @@ import com.aura.MainActivity
 import com.aura.R
 import com.aura.db.ContactDao
 import com.aura.db.ContactEntity
+import com.aura.security.AppLock
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.aura.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -30,6 +32,7 @@ import javax.inject.Singleton
 class ShareShortcuts @Inject constructor(
     @ApplicationContext private val context: Context,
     private val contactDao: ContactDao,
+    private val appLock: AppLock,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private val scope = CoroutineScope(ioDispatcher)
@@ -39,7 +42,13 @@ class ShareShortcuts @Inject constructor(
         if (started) return
         started = true
         scope.launch {
-            contactDao.observeAll().collectLatest { publish(it) }
+            // Real contact names go to OS-owned dynamic shortcuts (launcher long-press / share
+            // sheet), which survive outside the app's locked UI. Publish them only while the app
+            // is unlocked with the REAL PIN; clear them while locked or under the decoy PIN so a
+            // coercer can't read the contact list off the launcher.
+            combine(contactDao.observeAll(), appLock.locked, appLock.decoyActive) { contacts, locked, decoy ->
+                if (locked || decoy) emptyList() else contacts
+            }.collectLatest { publish(it) }
         }
     }
 

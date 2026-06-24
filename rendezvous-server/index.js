@@ -39,6 +39,7 @@ const CHECKIN_FRESHNESS_MS = 5 * 60 * 1000;
 const CHECKIN_RATE_LIMIT_MS = 60 * 1000;
 const FIND_RATE_LIMIT_PER_MIN = 60;  // headroom for active delivery retries (5s cadence)
 const SIGNAL_POST_RATE_LIMIT_PER_MIN = 30;
+const PREKEY_FETCH_RATE_LIMIT_PER_MIN = 60;  // each fetch pops a one-time prekey; cap OPK drain
 const MAX_QUEUE_LEN = 64;
 const CANDIDATE_COUNT = 10;
 const MAX_BODY = 64 * 1024;
@@ -67,6 +68,7 @@ const nodes = new Map();           // nodeIdHex -> { ip, port, timestamp, sigB64
 const signals = new Map();         // nodeIdHex -> [payload, ...]
 const lastCheckin = new Map();     // nodeIdHex -> ms
 const findHits = new Map();        // ip -> [ms, ...]
+const prekeyFetchHits = new Map(); // ip -> [ms, ...] (per-IP prekey-fetch limiter)
 const signalActivity = new Map();  // nodeIdHex -> ms (last queue activity, for expiry)
 const signalPostHits = new Map();  // ip -> [ms, ...]
 const tapHits = new Map();         // ip -> [ms, ...]
@@ -95,7 +97,7 @@ function purge() {
   // Reap per-IP rate-limiter buckets whose timestamps have all aged out, so these maps don't
   // grow one entry per distinct/rotating source IP forever (slow memory exhaustion).
   const rlCutoff = Date.now() - 60000;
-  for (const m of [findHits, signalPostHits, tapHits]) {
+  for (const m of [findHits, signalPostHits, tapHits, prekeyFetchHits]) {
     for (const [k, arr] of m) {
       const fresh = arr.filter((t) => t > rlCutoff);
       if (fresh.length === 0) m.delete(k); else m.set(k, fresh);
@@ -226,6 +228,15 @@ function allowFind(ip) {
   if (hits.length >= FIND_RATE_LIMIT_PER_MIN) { findHits.set(ip, hits); return false; }
   hits.push(now);
   findHits.set(ip, hits);
+  return true;
+}
+
+function allowPrekeyFetch(ip) {
+  const now = Date.now();
+  const hits = (prekeyFetchHits.get(ip) || []).filter((t) => now - t <= 60000);
+  if (hits.length >= PREKEY_FETCH_RATE_LIMIT_PER_MIN) { prekeyFetchHits.set(ip, hits); return false; }
+  hits.push(now);
+  prekeyFetchHits.set(ip, hits);
   return true;
 }
 
@@ -398,6 +409,10 @@ const server = http.createServer((req, res) => {
   // request; returns the signed prekey with opk:null once the pool is exhausted.
   if (req.method === 'GET' && url.startsWith('/prekeys/')) {
     const nodeId = url.slice('/prekeys/'.length);
+    if (!/^[0-9a-f]{64}$/.test(nodeId)) return send(res, 400, { error: 'bad nodeId' });
+    // Rate-limit: each fetch pops a one-time prekey, so an unthrottled caller could drain the
+    // whole OPK pool and force later handshakes down to the reused signed prekey.
+    if (!allowPrekeyFetch(remoteIp)) return send(res, 429, { error: 'rate limited' });
     const b = prekeys.get(nodeId);
     if (!b) return send(res, 404, { error: 'no prekey bundle' });
     const opk = (b.opks && b.opks.length) ? b.opks.shift() : null;

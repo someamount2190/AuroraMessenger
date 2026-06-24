@@ -158,6 +158,24 @@ class VerifyPairingTest {
         assertEquals(PairState.ACTIVE, db.contactDao().byNodeId(node)!!.pairState)
     }
 
+    @Test fun wrongCode_onAlreadyActiveContact_neverWipesOrBlocks() = runBlocking {
+        // The wrong-code blocklist+wipe now runs under the per-contact lock with a state re-check,
+        // so a late wrong submit can't destroy a contact the peer's pairverify already activated
+        // (which would also blocklist the honest peer).
+        coEvery { identity.getOrCreate() } returns testIdentity(1)
+        db.contactDao().upsert(
+            ContactEntity(node, "Alice", "kpub", "ed", createdAtMs = 1, pairingSent = true,
+                pairState = PairState.ACTIVE, iVerified = true, theyVerified = true)
+        )
+        kemRatchet.seed(node, ByteArray(32) { 7 }, iAmInitiator = true)
+
+        verifier().submitVerifyCode(node, "000000").getOrThrow()   // wrong code, contact already ACTIVE
+
+        assertEquals(PairState.ACTIVE, db.contactDao().byNodeId(node)!!.pairState, "must stay active")
+        coVerify(exactly = 0) { settings.blockNode(any()) }
+        coVerify(exactly = 0) { eraser.wipe(any()) }
+    }
+
     @Test fun submitVerifyCode_ignoredOutsideVerifyState() = runBlocking {
         coEvery { identity.getOrCreate() } returns testIdentity(1)
         db.contactDao().upsert(
