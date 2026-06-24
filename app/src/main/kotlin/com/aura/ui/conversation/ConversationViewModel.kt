@@ -21,12 +21,14 @@ import com.aura.pairing.PairingCoordinator
 import com.aura.media.MediaTransfer
 import com.aura.media.VoiceRecorder
 import com.aura.reaction.Reactions
+import com.aura.security.AppLock
 import com.aura.settings.DisappearingTimer
 import com.aura.transport.MessageSender
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +54,7 @@ class ConversationViewModel @Inject constructor(
     private val pairingManager: PairingCoordinator,
     private val callManager: CallController,
     private val rtcTransport: com.aura.transport.rtc.PeerTransport,
+    private val appLock: AppLock,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
@@ -78,7 +81,11 @@ class ConversationViewModel @Inject constructor(
                it.state != CallState.ENDED }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    // Decoy mode: the conversation must look empty. Gating the contact flow makes it emit
+    // null while decoy is active, which (like a deleted contact) bounces the screen back to
+    // the empty home list — closing any direct-navigation path into a chat under decoy.
     val contact: StateFlow<ContactEntity?> = contactDao.observeByNodeId(contactId)
+        .combine(appLock.decoyActive) { c, decoy -> if (decoy) null else c }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** This device's own verification code, shown on the verify screen (null otherwise). */
@@ -97,7 +104,9 @@ class ConversationViewModel @Inject constructor(
         }
     }
 
+    // Decoy mode: no message history is exposed (the data-layer "filters to empty" guarantee).
     val messages: StateFlow<List<MessageEntity>> = messageDao.observeConversation(contactId)
+        .combine(appLock.decoyActive) { msgs, decoy -> if (decoy) emptyList() else msgs }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Live conversation streak (consecutive active days), recomputed as messages change. */

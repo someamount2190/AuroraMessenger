@@ -318,8 +318,11 @@ const server = http.createServer((req, res) => {
     return readBody(req, (body) => {
       if (!body) return send(res, 400, { error: 'missing body' });
       const q = signals.get(nodeId) || [];
+      // Bounded queue: REJECT when full rather than dropping the oldest. Drop-oldest let
+      // anyone who knows a victim's nodeId evict the victim's pending real signals
+      // (pairing/offers) by posting MAX_QUEUE_LEN junk frames; rejecting preserves them.
+      if (q.length >= MAX_QUEUE_LEN) return send(res, 429, { error: 'queue full' });
       q.push(body);
-      while (q.length > MAX_QUEUE_LEN) q.shift();   // bounded queue: drop oldest
       signals.set(nodeId, q);
       signalActivity.set(nodeId, Date.now());
       resolveWaiter(nodeId, true);   // wake a parked /wait (call offer / pairing)

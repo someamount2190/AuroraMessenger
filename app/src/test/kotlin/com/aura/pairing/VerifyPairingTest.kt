@@ -123,6 +123,41 @@ class VerifyPairingTest {
         assertEquals(PairState.ACTIVE, db.contactDao().byNodeId(node)!!.pairState)
     }
 
+    @Test fun mutualVerify_submitThenPeerConfirm_endsActive() = runBlocking {
+        // Lost-update guard, order A: our submit lands first (iv=true, tv=false), then the
+        // peer's pairverify must re-read the fresh iVerified and flip to ACTIVE — not clobber
+        // it back to VERIFY and wedge the pair.
+        coEvery { identity.getOrCreate() } returns testIdentity(1)
+        val myHex = testIdentity(1).nodeId.toHex()
+        coEvery { pairingSignal.verifyEd(any(), any(), any()) } returns true
+        seedContact(theyVerified = false)
+        val expected = kemRatchet.sasCodeFor(node, node)!!
+        val v = verifier()
+
+        assertTrue(v.submitVerifyCode(node, expected).getOrThrow())
+        assertEquals(PairState.VERIFY, db.contactDao().byNodeId(node)!!.pairState)   // only our half yet
+        v.handlePairVerify(JSONObject().put("from", node).put("to", myHex).put("sig", "ok")).getOrThrow()
+
+        assertEquals(PairState.ACTIVE, db.contactDao().byNodeId(node)!!.pairState)
+    }
+
+    @Test fun mutualVerify_peerConfirmThenSubmit_endsActive() = runBlocking {
+        // Lost-update guard, order B: the peer's pairverify lands first (tv=true, iv=false),
+        // then our submit must re-read the fresh theyVerified and flip to ACTIVE.
+        coEvery { identity.getOrCreate() } returns testIdentity(1)
+        val myHex = testIdentity(1).nodeId.toHex()
+        coEvery { pairingSignal.verifyEd(any(), any(), any()) } returns true
+        seedContact(theyVerified = false)
+        val expected = kemRatchet.sasCodeFor(node, node)!!
+        val v = verifier()
+
+        v.handlePairVerify(JSONObject().put("from", node).put("to", myHex).put("sig", "ok")).getOrThrow()
+        assertEquals(PairState.VERIFY, db.contactDao().byNodeId(node)!!.pairState)   // only their half yet
+        assertTrue(v.submitVerifyCode(node, expected).getOrThrow())
+
+        assertEquals(PairState.ACTIVE, db.contactDao().byNodeId(node)!!.pairState)
+    }
+
     @Test fun submitVerifyCode_ignoredOutsideVerifyState() = runBlocking {
         coEvery { identity.getOrCreate() } returns testIdentity(1)
         db.contactDao().upsert(

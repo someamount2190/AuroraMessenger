@@ -8,7 +8,10 @@ import com.aura.db.PairState
 import com.aura.identity.IdentityStore
 import com.aura.settings.AuroraSettings
 import com.aura.transport.MessageSender
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
 /**
@@ -26,6 +29,16 @@ class VerifyPairing @Inject constructor(
     private val events: PairingEvents,
     private val messageSender: MessageSender
 ) {
+    /**
+     * Per-contact lock serializing the read→decide→write of the verify flags. The two
+     * verify transitions run in different scopes — [submitVerifyCode] from the UI and
+     * [handlePairVerify] from the SyncEngine — and both do a read-modify-write of
+     * (iVerified, theyVerified, pairState). Without serialization they can interleave so
+     * each clobbers the other's flag and the pair wedges in VERIFY forever. We also re-read
+     * the row inside the lock so the second writer sees the first's flag and flips to ACTIVE.
+     */
+    private val verifyLocks = ConcurrentHashMap<String, Mutex>()
+    private fun lockFor(nodeIdHex: String): Mutex = verifyLocks.computeIfAbsent(nodeIdHex) { Mutex() }
     /** Initiator auto-bootstrap: once paired+verified, the initiator sends a sealed no-op
      *  control frame so the responder's KEM receive ratchet is live and either side can text
      *  first. Best-effort; the initiator's first real message bootstraps otherwise. */
@@ -63,12 +76,22 @@ class VerifyPairing @Inject constructor(
             return@runCatching false
         }
 
-        if (contact.theyVerified) {
-            contactDao.setVerify(contactNodeIdHex, iv = true, tv = true, state = PairState.ACTIVE)
-            events.activated(contactNodeIdHex)
-            bootstrapIfInitiator(contactNodeIdHex)
-        } else {
-            contactDao.setVerify(contactNodeIdHex, iv = true, tv = false, state = PairState.VERIFY)
+        lockFor(contactNodeIdHex).withLock {
+            // Re-read under the lock: handlePairVerify may have set theyVerified since the
+            // SAS check above. Whichever of the two transitions runs second sees the other's
+            // flag and flips to ACTIVE instead of clobbering it back to VERIFY.
+            val fresh = contactDao.byNodeId(contactNodeIdHex) ?: return@runCatching false
+            when (fresh.pairState) {
+                PairState.VERIFY -> if (fresh.theyVerified) {
+                    contactDao.setVerify(contactNodeIdHex, iv = true, tv = true, state = PairState.ACTIVE)
+                    events.activated(contactNodeIdHex)
+                    bootstrapIfInitiator(contactNodeIdHex)
+                } else {
+                    contactDao.setVerify(contactNodeIdHex, iv = true, tv = false, state = PairState.VERIFY)
+                }
+                PairState.ACTIVE -> { /* already activated by the peer's concurrent pairverify */ }
+                else -> return@runCatching false
+            }
         }
         pairingSignal.sendSimple("pairverify", myNodeIdHex, contactNodeIdHex, identity)
         true
@@ -84,12 +107,20 @@ class VerifyPairing @Inject constructor(
         if (!pairingSignal.verifyEd("aura-pairverify-v1|$from|$myNodeIdHex", contact.ed25519PubB64, json.optString("sig"))) {
             return@runCatching Unit
         }
-        if (contact.iVerified) {
-            contactDao.setVerify(from, iv = true, tv = true, state = PairState.ACTIVE)
-            events.activated(from)
-            bootstrapIfInitiator(from)
-        } else {
-            contactDao.setVerify(from, iv = false, tv = true, state = PairState.VERIFY)
+        lockFor(from).withLock {
+            // Re-read under the lock so a concurrent submitVerifyCode (which may have set
+            // iVerified) isn't clobbered — the second writer here flips to ACTIVE.
+            val fresh = contactDao.byNodeId(from) ?: return@runCatching Unit
+            when (fresh.pairState) {
+                PairState.VERIFY -> if (fresh.iVerified) {
+                    contactDao.setVerify(from, iv = true, tv = true, state = PairState.ACTIVE)
+                    events.activated(from)
+                    bootstrapIfInitiator(from)
+                } else {
+                    contactDao.setVerify(from, iv = false, tv = true, state = PairState.VERIFY)
+                }
+                else -> { /* already ACTIVE (or gone): nothing to do */ }
+            }
         }
         Unit
     }
