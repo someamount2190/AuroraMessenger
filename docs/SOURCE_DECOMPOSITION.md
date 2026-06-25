@@ -1,17 +1,17 @@
-# Monolith Audit
+# Source Decomposition
 
-A structural-health pass over Aurora's source, focused on **monolithic files** —
-single files that have grown to carry several responsibilities at once. This is a
-maintainability/auditability concern, not a security finding: large mixed-concern
+A structural-health pass over Aurora's source, focused on **large mixed-concern
+files** — single files that have grown to carry several responsibilities at once.
+This is a maintainability/auditability concern, not a security finding: large mixed-concern
 files are harder to review, harder to test in isolation, and raise the chance that
 a security-relevant change is made in the wrong place. It complements the
 component view in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 > Scope: `app/src/main` and `crypto/src/main` (Kotlin). Pinned to the commit this
 > document was committed against; re-run the metrics below after large refactors.
-> No behaviour was changed by this audit — it is analysis only.
+> No behaviour was changed by this pass — it is analysis only.
 
-## How "monolith" is judged here
+## How a file is flagged here
 
 A file is flagged when it combines two or more of:
 
@@ -39,10 +39,10 @@ Measured over `app/src/main` + `crypto/src/main` (Kotlin):
 
 The long tail is healthy — most files are small and single-purpose. The mass sits
 in a handful of screen/coordinator files at the top. The crypto core
-(`crypto/src/main`) is *not* a monolith concern: its files are bounded and
+(`crypto/src/main`) is *not* a decomposition concern: its files are bounded and
 single-responsibility (`HybridSigner` 326, `HybridKem` 275, `KemDoubleRatchet`/`KemRatchetManager`),
 which is consistent with the Android-free, independently-reviewable core the
-architecture doc describes. The monolith pressure is concentrated in the **UI and
+architecture doc describes. The decomposition pressure is concentrated in the **UI and
 the pairing/call coordinators**.
 
 ## Decomposition status
@@ -81,9 +81,7 @@ Two classes of work:
 > Verification: the full `:app` module compiles and the JVM/Robolectric unit
 > suite is green after the refactor — **75 app tests, 0 failures** (incl.
 > `RoomDaoTest`, `PairingCryptoTest`/`PairingCryptoAttacks`, `CallLogTest`,
-> `CheckinSigningTest`), plus the standalone `:crypto` suite. A `SessionStart`
-> hook (`.claude/hooks/session-start.sh`) provisions the Android SDK so
-> `gradle :app:testDebugUnitTest` runs in web sessions.
+> `CheckinSigningTest`), plus the standalone `:crypto` suite.
 
 ## Findings, by priority
 
@@ -143,7 +141,7 @@ That alone takes the file from 1133 to roughly 450 lines without touching logic.
 
 ### 2. `PairingCoordinator.kt` — 528 lines (highest review-risk)
 
-This is the most security-sensitive monolith. The `PairingCoordinator` class
+This is the most security-sensitive of these files. The `PairingCoordinator` class
 owns the whole pairing/verification state machine *and* performs the crypto
 inline: QR parsing, PQXDH/legacy KEM encapsulation and decapsulation, signature
 generation and verification, ratchet seeding, SAS-code derivation/validation,

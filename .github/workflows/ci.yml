@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, master, "claude/**" ]
+    branches: [ main, master, "pq-crypto-refactor" ]
   pull_request:
   workflow_dispatch:
 

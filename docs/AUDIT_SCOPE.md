@@ -18,7 +18,7 @@ already know about. It is the map; the territory is the source and the rest of `
 | [`docs/THREAT_MODEL.md`](THREAT_MODEL.md) | STRIDE + LINDDUN threat model (threat IDs) |
 | [`docs/KEY_MANAGEMENT.md`](KEY_MANAGEMENT.md) · [`docs/DATA_AT_REST.md`](DATA_AT_REST.md) | Key lifecycle & at-rest data |
 | [`docs/DEPENDENCIES.md`](DEPENDENCIES.md) · [`docs/BUILD_REPRODUCIBILITY.md`](BUILD_REPRODUCIBILITY.md) | Supply chain & build |
-| [`docs/MONOLITH_AUDIT.md`](MONOLITH_AUDIT.md) | Structural-health pass: monolithic files & decomposition plan |
+| [`docs/SOURCE_DECOMPOSITION.md`](SOURCE_DECOMPOSITION.md) | Structural-health pass: large mixed-concern files & decomposition plan |
 | [`docs/CRYPTO_TEST_VECTORS.md`](CRYPTO_TEST_VECTORS.md) | Per-primitive test-vector / KAT sources & applicability |
 | [`docs/CRYPTO_MIGRATION_PLAN.md`](CRYPTO_MIGRATION_PLAN.md) | Locked plan: replace hand-rolled crypto with libraries, move to FIPS PQC + X-Wing |
 | [`SECURITY.md`](../SECURITY.md) | Disclosure policy |
