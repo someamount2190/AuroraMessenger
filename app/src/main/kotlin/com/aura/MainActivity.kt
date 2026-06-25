@@ -46,7 +46,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Phase 8: screenshot prevention + no content in the recents preview.
-        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        // Release-only: debuggable builds skip FLAG_SECURE so the screen can be captured for
+        // emulator/dev testing; release builds (not debuggable) keep it secure.
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0)
+            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         // Fresh installs are walked through permissions by the onboarding gate
         // (com.aura.ui.onboarding.PermissionsScreen), which owns the notification prompt.
         // Only nudge already-onboarded upgrades that predate that gate here.

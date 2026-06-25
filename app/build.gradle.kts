@@ -101,10 +101,17 @@ dependencies {
     // Aurora's crypto core — a standalone module published to the in-repo local
     // Maven repo (see /crypto and libs/maven). It brings BouncyCastle + Tink in
     // transitively. Pure-JVM now — no native liboqs .so files.
-    implementation("com.aura:aura-crypto:0.1.0")
+    // Exclude the full `tink` jar: androidx.security:security-crypto (below) pulls `tink-android`,
+    // which carries the SAME subtle.XChaCha20Poly1305 the crypto module uses AND the
+    // integration.android keystore classes that EncryptedSharedPreferences/MasterKey require.
+    // Having both full `tink` and `tink-android` on the Android classpath is a duplicate-class
+    // dex failure, so the app runtime uses tink-android only (the pure-JVM crypto module still
+    // compiles against full `tink`; at runtime its XChaCha20Poly1305 resolves to tink-android's).
+    implementation("com.aura:aura-crypto:0.1.0") {
+        exclude(group = "com.google.crypto.tink", module = "tink")
+    }
     // Kept explicit too (belt-and-suspenders for the post-quantum + classical stack).
     implementation(libs.bcprov)
-    implementation(libs.tink)   // XChaCha20-Poly1305 AEAD (also transitive via aura-crypto)
     implementation(libs.security.crypto)
 
     // Encrypted DB (Phase 2+)
