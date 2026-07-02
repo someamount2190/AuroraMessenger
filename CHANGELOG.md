@@ -8,6 +8,56 @@ line (`0.2.1-pre`) while the design stabilises.
 
 Nothing yet.
 
+## [0.3.0-pre] — 2026-07-02
+
+The cryptographic core has been re-engineered end to end. **This release is a clean
+break: 0.3.0 cannot message 0.2.x.** On first launch over an existing install the app
+detects the legacy identity and resets identity, contacts and sessions to a clean
+slate — you and your contacts must both update, then pair again.
+
+### Changed
+- **Pure-JVM FIPS-track crypto stack.** liboqs/JNI is fully removed; the core now runs on
+  Bouncy Castle 1.84 + Google Tink. **X-Wing** (FIPS 203 **ML-KEM-768** + X25519) replaces
+  Kyber-1024 for key agreement, **ML-DSA-65** (FIPS 204) replaces Dilithium-3 as the
+  post-quantum signature half (still paired with Ed25519), XChaCha20-Poly1305 moves to
+  Tink, and HKDF moves to the RFC 5869 HMAC-SHA-256 standard. No native code remains
+  anywhere in the stack.
+- **One post-quantum KEM Double Ratchet for all sealed traffic.** Messages, media and
+  call/WebRTC signaling now run through an X-Wing KEM Double Ratchet with
+  **post-compromise healing** — each direction change mixes fresh KEM entropy into the
+  session, so a stolen session state stops decrypting once both sides ratchet. The old
+  symmetric-only ratchet is retired. It is bespoke protocol crypto (per
+  `docs/PQ_RATCHET_DESIGN.md`) and remains gated on dedicated external review.
+- **Pairing fails closed without forward secrecy.** A verified PQXDH prekey bundle is now
+  required; the legacy no-forward-secrecy fallback is removed, so a network attacker can
+  no longer strip forward secrecy by suppressing prekeys.
+
+### Fixed
+- Audit and bug-hunt findings: decoy-PIN data isolation, a verify-wipe race, one-time
+  prekey drain, a decoy-candidate leak, and rendezvous signal flush ordering.
+- Dropped key material (root/chain/skipped message keys) is zeroized in the KEM ratchet.
+- Legacy or malformed KEM ratchet blobs fail closed across the v9→v10 database migration.
+- Backups now carry the KEM session (backup DATA_VERSION 2; v1 backups still import), and
+  "delete all data" clears KEM sessions too.
+- Tink duplicate-class dex failure resolved; `FLAG_SECURE` applies to release builds only.
+- The rendezvous server's `/find` decoy padding matches the ML-DSA-65 signature size.
+
+### Added
+- **Independent-authority test vectors:** NIST **ACVP** KATs (ML-KEM-768
+  keygen/encaps/decaps, ML-DSA-65 keygen), **Wycheproof** corpora (X25519, Ed25519,
+  XChaCha20-Poly1305, ML-KEM-768, ML-DSA-65 verify), and RFC 8032 / 7748 / 5869 KATs —
+  260 tests green across `crypto` + `app`, all pure-JVM/CI-runnable.
+- End-to-end simulations: the real X-Wing PQXDH handshake and a two-peer
+  pair→message flow driving the live KEM ratchet.
+- GitHub Actions CI running the full suite (post-quantum crypto included) per push.
+
+### Internal
+- Nine oversized source files decomposed (conversation, home, settings, database,
+  rendezvous server, pairing coordinator, call models, navigation); DI scopes tightened.
+- Crypto documentation refreshed and reconciled with the shipped stack (`CRYPTO_SPEC`,
+  `CRYPTO_MIGRATION_PLAN`, `PQ_RATCHET_DESIGN`, `CRYPTO_TEST_VECTORS`, `AUDIT_SCOPE`,
+  threat model, key management, module README).
+
 ## [0.2.6-pre] — 2026-06-21
 
 Photos, videos and voice messages now reach contacts across carrier networks.
