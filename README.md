@@ -56,8 +56,12 @@ labels are in [`docs/CRYPTO_SPEC.md`](docs/CRYPTO_SPEC.md).
 - **Content confidentiality, end to end** — content is sealed with a hybrid of post-quantum
   and classical primitives; no server (rendezvous included) can read it.
 - **Authenticity & integrity** — messages are hybrid-signed and AEAD-protected.
-- **Forward secrecy** — a per-message symmetric ratchet plus a forward-secret PQXDH handshake;
+- **Forward secrecy** — a per-message ratchet plus a forward-secret PQXDH handshake;
   traffic recorded today stays unreadable even if a long-term key is stolen later.
+- **Post-compromise security ("healing")** — the message ratchet is a post-quantum **KEM
+  Double Ratchet**: each direction change mixes fresh X-Wing entropy into the session, so a
+  stolen session state stops decrypting once both sides have ratcheted. (Review-gated — see
+  the non-claims below.)
 - **MITM-resistant pairing** — mutual SAS verification fails closed if anyone is in the middle.
 - **Identity binding** — `nodeId = SHA3-256(keys)`; no impersonation via substitute keys.
 - **Post-quantum resistance** — an attacker must break *both* the PQ and the classical primitive.
@@ -65,7 +69,10 @@ labels are in [`docs/CRYPTO_SPEC.md`](docs/CRYPTO_SPEC.md).
 - **At-rest protection** — SQLCipher DB + Keystore-backed master key; instant cryptographic erase.
 
 **Aurora does NOT (yet) claim:**
-- **Post-compromise "healing"** — a session rests on one root secret; recovery after key compromise is future work.
+- **A reviewed ratchet construction** — the KEM Double Ratchet follows the well-studied
+  "Double Ratchet with a KEM step" pattern and passes its adversarial test suite, but it is
+  bespoke protocol crypto that has not had dedicated external review; treat the healing
+  guarantee as provisional until it has.
 - **Endpoint security** — a compromised/rooted/malware device defeats E2E.
 - **Anonymity / unobservability** — it hides content and identities, not that you use Aurora or your IP from the rendezvous; no traffic-analysis resistance in the default path.
 - **Availability** — the free single rendezvous offers no DoS guarantees.
@@ -82,10 +89,12 @@ Full reasoning and residual risks: [`docs/AUDIT_SCOPE.md`](docs/AUDIT_SCOPE.md) 
   An attacker must break *both* the post-quantum and the classical primitive, so
   Aurora resists a future quantum adversary without giving up today's well-audited
   classical guarantees.
-- **Forward secrecy, end to end.** Each conversation runs through a per-contact
-  symmetric double-ratchet: every message draws a one-time key that is immediately
-  discarded, and the pairing root secret is destroyed after seeding. A key recovered
-  from a device today cannot decrypt past traffic.
+- **Forward secrecy and healing, end to end.** Each conversation runs through a per-contact
+  post-quantum **KEM Double Ratchet** — Signal's Double Ratchet with the DH step replaced by
+  an X-Wing KEM: every message draws a one-time key that is immediately discarded, and each
+  direction change mixes fresh KEM entropy into the root, so a compromised session heals
+  once both sides ratchet. The pairing root secret is destroyed after seeding. A key
+  recovered from a device today cannot decrypt past traffic.
 - **Forward-secret handshake (PQXDH).** Pairing uses a post-quantum X3DH-style
   handshake with server-published, signed prekey bundles: a long-term identity key,
   a rotating signed prekey, and single-use one-time prekeys. Because the ephemeral
@@ -271,9 +280,12 @@ its own.
 - **Identity is `nodeId = SHA3-256(kemPub ‖ signPub)`.** The address is a commitment to
   the keys, so it can't be claimed with substitute keys, and the server can enforce the
   binding. *Cost:* keys can't rotate without changing identity.
-- **Symmetric double-ratchet now; continuous DH/KEM ratchet deferred.** Cheap per-message
-  forward secrecy, and PQXDH closes the handshake gap. *Honest cost:* no post-compromise
-  "healing" yet; a session still hinges on one root. That ratchet is the next phase.
+- **A KEM Double Ratchet, not a symmetric-only chain.** The live message ratchet is the
+  Double Ratchet pattern with the DH step replaced by an X-Wing KEM, so per-message forward
+  secrecy *and* post-compromise healing are both hybrid post-quantum; PQXDH closes the
+  handshake gap. The old symmetric-only ratchet has been retired. *Honest cost:* it is
+  bespoke protocol crypto — a standard pattern, not a novel design, but gated on dedicated
+  review before it should be relied upon (see [`docs/PQ_RATCHET_DESIGN.md`](docs/PQ_RATCHET_DESIGN.md)).
 
 *Architecture & infrastructure*
 

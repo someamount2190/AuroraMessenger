@@ -59,11 +59,14 @@ report-eligibility version of this list.)
 - TLS + certificate pinning protect the rendezvous transport against a rogue CA.
 
 ## Known limitations & residual risks
-- **No post-compromise security ("healing") yet.** A session rests on a single root secret
-  seeded at pairing; the symmetric double-ratchet gives forward secrecy but not recovery
-  after a key compromise. A post-quantum (X-Wing) asymmetric ratchet is the planned next
-  phase (Phase 5 of [`CRYPTO_MIGRATION_PLAN.md`](CRYPTO_MIGRATION_PLAN.md)); it is bespoke
-  protocol crypto and gated on dedicated review before it is relied upon.
+- **The KEM Double Ratchet is bespoke protocol crypto pending dedicated review.**
+  Post-compromise security ("healing") is now implemented: the live message ratchet is a
+  post-quantum (X-Wing) KEM Double Ratchet (Phase 5 of
+  [`CRYPTO_MIGRATION_PLAN.md`](CRYPTO_MIGRATION_PLAN.md), specified in
+  [`PQ_RATCHET_DESIGN.md`](PQ_RATCHET_DESIGN.md)), and the old symmetric ratchet has been
+  retired. It follows the well-studied "Double Ratchet with a KEM step" pattern and passes
+  its adversarial test suite, but it has not had dedicated external review — treat the
+  healing guarantee as provisional until it has.
 - ~~**Legacy handshake fallback.**~~ **Closed.** The identity-only (no-forward-secrecy)
   fallback has been removed: pairing now requires a verified PQXDH prekey bundle and fails
   closed otherwise, so a network attacker can no longer suppress the bundle to strip forward

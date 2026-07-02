@@ -21,9 +21,12 @@ Lifecycle of every key, from generation to destruction. Primitives and sizes are
 
 ## Session keys (per contact)
 - A 32-byte **pairing root** is derived via PQXDH at pairing (`CRYPTO_SPEC` §5), used to seed the
-  double ratchet, then **destroyed** (`root.fill(0)`).
-- The ratchet derives **per-message keys** that are used once and discarded (forward secrecy).
-- **Limitation:** no post-compromise healing yet — the session rests on the one seeded root.
+  KEM Double Ratchet, then **destroyed** (`root.fill(0)`).
+- The ratchet derives **per-message keys** that are used once and discarded (forward secrecy),
+  and each direction change mixes fresh X-Wing KEM entropy into the root chain, so a compromised
+  session **heals** once both sides have taken a fresh ratchet step (`CRYPTO_SPEC` §6).
+- **Caveat:** the KEM Double Ratchet is bespoke protocol crypto pending dedicated review
+  (see `AUDIT_SCOPE.md`).
 
 ## Prekeys (PQXDH)
 - **Signed prekey (SPK):** one current hybrid keypair, rotated every **7 days** with a **7-day

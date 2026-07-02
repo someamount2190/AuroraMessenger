@@ -5,7 +5,8 @@
 > `KemRatchetManager` drive `MessageSender`/`TcpMessageServer`/`MediaTransfer`, persisted to the
 > `kem_ratchet` Room table; pairing seeds it (initiator/responder) and the initiator
 > **auto-bootstraps** on pairing completion (a sealed no-op control frame) so either side can
-> send first. The symmetric `RatchetManager` now serves only the SAS code + media-at-rest key.
+> send first. The symmetric `RatchetManager` has been retired; the SAS fingerprint and
+> media-at-rest key it served are folded into `KemRatchetManager`.
 > Proven by `KemDoubleRatchetTest` (incl. healing), `KemRatchetCodecTest`, `KemRatchetManagerTest`,
 > and the end-to-end `EndToEndPairMessageSimTest`. It remains **bespoke protocol crypto** that
 > should get dedicated review before being depended on in production.
@@ -20,11 +21,11 @@
 
 ## 1. Why
 
-Aurora's current ratchet ([`RatchetManager`](../crypto/src/main/kotlin/com/aura/crypto/RatchetManager.kt))
-is a **symmetric** double ratchet: two hash chains seeded once from the pairing root. It
-gives **forward secrecy** (a key seized today can't read yesterday's traffic) but **no
-post-compromise security ("healing")** — an attacker who learns the current chain state reads
-everything from then on. This is the open "healing" gap in [`AUDIT_SCOPE.md`](AUDIT_SCOPE.md).
+Aurora's previous ratchet (`RatchetManager`, since retired) was a **symmetric** double
+ratchet: two hash chains seeded once from the pairing root. It gave **forward secrecy** (a
+key seized today can't read yesterday's traffic) but **no post-compromise security
+("healing")** — an attacker who learned the current chain state could read everything from
+then on. This was the open "healing" gap in [`AUDIT_SCOPE.md`](AUDIT_SCOPE.md).
 
 Phase 5 adds an **asymmetric (KEM) ratchet** in the well-studied "Double Ratchet with a KEM
 replacing the DH step" pattern, using **X-Wing** (ML-KEM-768 + X25519) as the KEM so healing

@@ -266,9 +266,10 @@ Ordered low-risk → high-risk so value lands early and the dangerous piece is i
 
 ## 6. Phase 5 — the post-quantum asymmetric ratchet (design sketch, needs dedicated review)
 
-Today's `RatchetManager` is a **symmetric** ratchet: two hash chains seeded once at pairing.
-It gives forward secrecy but **no post-compromise security** (the open "healing" gap in
-`AUDIT_SCOPE`). Phase 5 adds an **asymmetric (KEM) ratchet** in the well-studied "Double
+The pre-Phase-5 `RatchetManager` (since retired) was a **symmetric** ratchet: two hash chains
+seeded once at pairing. It gave forward secrecy but **no post-compromise security** (what was
+the open "healing" gap in `AUDIT_SCOPE`). Phase 5 adds an **asymmetric (KEM) ratchet** in the
+well-studied "Double
 Ratchet with a KEM replacing the DH step" pattern, using **X-Wing** as the KEM so it is hybrid
 post-quantum:
 

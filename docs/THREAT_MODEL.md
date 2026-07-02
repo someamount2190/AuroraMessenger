@@ -108,8 +108,9 @@ opaque signaling. See the DFD in [`ARCHITECTURE.md`](ARCHITECTURE.md) §2.
 | P-NC-01 | **Non-compliance** with stated policy | Zero-log design; AGPL source; warrant canary | Trust in operator |
 
 ## 7. Residual risks & explicit non-goals
-- **No post-compromise "healing"** (continuous DH/KEM ratchet deferred) — a session rests on
-  one seeded root (`CRYPTO_SPEC` §6).
+- **Post-compromise "healing" is implemented but review-gated** — the KEM Double Ratchet
+  (`CRYPTO_SPEC` §6) mixes fresh X-Wing entropy into the root on each direction change; it is
+  bespoke protocol crypto pending dedicated review (see [`AUDIT_SCOPE.md`](AUDIT_SCOPE.md)).
 - **Endpoint security is out of scope** (ADV-X): a rooted/malware device defeats E2E.
 - **No anonymity / traffic-analysis resistance** in the default path; the rendezvous learns
   reachability + IP (P-DET-01, P-IDENT-01). Optional ShadowMesh relay (off by default).

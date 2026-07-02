@@ -6,13 +6,13 @@ import java.io.ByteArrayOutputStream
  * **Post-quantum asymmetric (KEM) Double Ratchet** — Phase 5 of
  * [docs/CRYPTO_MIGRATION_PLAN.md], specified in [docs/PQ_RATCHET_DESIGN.md].
  *
- * > ⚠ **FOR REVIEW — not yet wired into the app.** This is bespoke protocol crypto: a
- * > self-contained, pure-JVM reference implementation proven by [KemDoubleRatchetTest]
- * > (round-trips across many ratchet steps, **post-compromise-security "healing"**,
- * > out-of-order/skipped across epochs, tamper rejection). It must pass dedicated review
- * > before Aurora relies on it; integration into the transport frame format
- * > ([com.aura.transport]) is a deliberate later step. The shipping ratchet remains the
- * > symmetric [RatchetManager].
+ * > ⚠ **LIVE, review-gated.** This is the shipping message ratchet — driven by
+ * > [KemRatchetManager] for all sealed traffic; the old symmetric `RatchetManager` has been
+ * > retired. It is bespoke protocol crypto: a self-contained, pure-JVM implementation proven
+ * > by [KemDoubleRatchetTest] (round-trips across many ratchet steps,
+ * > **post-compromise-security "healing"**, out-of-order/skipped across epochs, tamper
+ * > rejection). It must still pass dedicated external review before being relied upon in
+ * > production.
  *
  * Structure follows Signal's Double Ratchet, substituting an **X-Wing** (ML-KEM-768 + X25519)
  * KEM for the DH ratchet step so healing is hybrid post-quantum. Three KDF chains: a root
